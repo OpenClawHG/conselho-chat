@@ -2,9 +2,11 @@
 
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
+import { Download, FileIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AgentAvatar } from "./agent-avatar"
 import type { Message, Agent } from "@/lib/chat-api"
+import { isAttachmentMessage, parseAttachment, isImageType, formatFileSize } from "@/lib/file-upload"
 
 interface MessageBubbleProps {
   message: Message
@@ -13,10 +15,67 @@ interface MessageBubbleProps {
   agent?: Agent
 }
 
+function AttachmentContent({ content, isOwn }: { content: string; isOwn: boolean }) {
+  const attachment = parseAttachment(content)
+  if (!attachment) return <p className="whitespace-pre-wrap break-words">{content}</p>
+
+  if (isImageType(attachment.type)) {
+    return (
+      <div className="space-y-1">
+        <a href={attachment.url} target="_blank" rel="noopener noreferrer" className="block">
+          <img
+            src={attachment.url}
+            alt={attachment.name}
+            className="max-w-full max-h-[300px] rounded-lg object-contain cursor-pointer hover:opacity-90 transition-opacity"
+            loading="lazy"
+          />
+        </a>
+        <div className="flex items-center gap-1.5 text-[11px] opacity-70">
+          <FileIcon className="h-3 w-3" />
+          <span className="truncate">{attachment.name}</span>
+          <span>({formatFileSize(attachment.size)})</span>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <a
+      href={attachment.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn(
+        "flex items-center gap-3 rounded-lg p-2.5 transition-colors",
+        isOwn ? "bg-violet-700/50 hover:bg-violet-700/70" : "bg-zinc-700/50 hover:bg-zinc-700/70"
+      )}
+    >
+      <div className={cn(
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+        isOwn ? "bg-violet-800" : "bg-zinc-600"
+      )}>
+        <FileIcon className="h-5 w-5 text-zinc-300" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate">{attachment.name}</p>
+        <p className={cn(
+          "text-[11px]",
+          isOwn ? "text-violet-300" : "text-zinc-400"
+        )}>
+          {formatFileSize(attachment.size)}
+        </p>
+      </div>
+      <Download className={cn(
+        "h-4 w-4 shrink-0",
+        isOwn ? "text-violet-300" : "text-zinc-400"
+      )} />
+    </a>
+  )
+}
+
 export function MessageBubble({ message, isOwn, showAgent = true, agent }: MessageBubbleProps) {
   const msgAgent = agent || message.agent
+  const hasAttachment = isAttachmentMessage(message.content)
 
-  // System messages
   if (message.type === "system") {
     return (
       <div className="flex justify-center py-1">
@@ -36,21 +95,19 @@ export function MessageBubble({ message, isOwn, showAgent = true, agent }: Messa
         isOwn ? "flex-row-reverse" : "flex-row"
       )}
     >
-      {/* Avatar */}
       {showAgent && msgAgent && !isOwn ? (
         <AgentAvatar agent={msgAgent} size="sm" showStatus={false} className="mt-1" />
       ) : (
         !isOwn && <div className="w-7 shrink-0" />
       )}
 
-      {/* Bubble */}
       <div
         className={cn(
-          "max-w-[75%] min-w-[60px]",
+          "min-w-[60px]",
+          hasAttachment ? "max-w-[85%]" : "max-w-[75%]",
           isOwn ? "items-end" : "items-start"
         )}
       >
-        {/* Agent name */}
         {showAgent && msgAgent && !isOwn && (
           <p className={cn(
             "text-[11px] font-medium mb-0.5 ml-1",
@@ -73,7 +130,9 @@ export function MessageBubble({ message, isOwn, showAgent = true, agent }: Messa
               : "bg-zinc-800 text-zinc-200 rounded-bl-md"
           )}
         >
-          {message.type === "code" ? (
+          {hasAttachment ? (
+            <AttachmentContent content={message.content} isOwn={isOwn} />
+          ) : message.type === "code" ? (
             <pre className="overflow-x-auto text-xs font-mono bg-zinc-900/50 rounded-lg p-2 my-1">
               <code>{message.content}</code>
             </pre>

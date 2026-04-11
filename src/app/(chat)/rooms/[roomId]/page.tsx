@@ -124,6 +124,7 @@ export default function RoomPage() {
 
       <MessageInput
         onSend={handleSend}
+        roomId={roomId}
         members={room.members || []}
         placeholder={`Mensagem para ${room.name}...`}
       />
