@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react"
 import { format, isToday, isYesterday } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { ArrowDown } from "lucide-react"
+import { ArrowDown, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -38,21 +38,38 @@ export function MessageList({
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const topSentinelRef = useRef<HTMLDivElement>(null)
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const prevScrollHeightRef = useRef(0)
+  const prevMessagesLenRef = useRef(0)
 
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [])
 
-  // Auto-scroll when new messages arrive
+  // Auto-scroll when new messages arrive (only if already at bottom)
   useEffect(() => {
-    if (autoScroll) {
+    if (autoScroll && messages.length > prevMessagesLenRef.current) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" })
     }
+    prevMessagesLenRef.current = messages.length
   }, [messages.length, autoScroll])
 
-  // Detect scroll position
+  // Preserve scroll position when loading older messages
+  useEffect(() => {
+    if (loadingMore && containerRef.current) {
+      const newScrollHeight = containerRef.current.scrollHeight
+      const scrollDiff = newScrollHeight - prevScrollHeightRef.current
+      if (scrollDiff > 0) {
+        containerRef.current.scrollTop += scrollDiff
+      }
+      setLoadingMore(false)
+    }
+  }, [messages, loadingMore])
+
+  // Detect scroll position for auto-scroll and infinite scroll up
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -63,11 +80,18 @@ export function MessageList({
       const isNearBottom = scrollHeight - scrollTop - clientHeight < 100
       setShowScrollButton(!isNearBottom)
       setAutoScroll(isNearBottom)
+
+      // Infinite scroll up - trigger loadMore when near top
+      if (scrollTop < 100 && hasMore && onLoadMore && !loadingMore) {
+        prevScrollHeightRef.current = container.scrollHeight
+        setLoadingMore(true)
+        onLoadMore()
+      }
     }
 
     container.addEventListener("scroll", handleScroll)
     return () => container.removeEventListener("scroll", handleScroll)
-  }, [])
+  }, [hasMore, onLoadMore, loadingMore])
 
   if (loading) {
     return (
@@ -106,13 +130,29 @@ export function MessageList({
         ref={containerRef}
         className="h-full overflow-y-auto"
       >
-        {/* Load more */}
-        {hasMore && (
+        {/* Top sentinel for infinite scroll */}
+        <div ref={topSentinelRef} />
+
+        {/* Loading indicator for older messages */}
+        {loadingMore && (
+          <div className="flex justify-center py-3">
+            <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
+          </div>
+        )}
+
+        {/* Manual load more button (fallback) */}
+        {hasMore && !loadingMore && (
           <div className="flex justify-center py-3">
             <Button
               variant="ghost"
               size="sm"
-              onClick={onLoadMore}
+              onClick={() => {
+                if (containerRef.current) {
+                  prevScrollHeightRef.current = containerRef.current.scrollHeight
+                  setLoadingMore(true)
+                }
+                onLoadMore?.()
+              }}
               className="text-xs text-zinc-500"
             >
               Carregar mensagens anteriores
