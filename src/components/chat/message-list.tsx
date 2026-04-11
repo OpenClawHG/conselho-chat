@@ -40,22 +40,39 @@ export function MessageList({
   const bottomRef = useRef<HTMLDivElement>(null)
   const topSentinelRef = useRef<HTMLDivElement>(null)
   const [showScrollButton, setShowScrollButton] = useState(false)
-  const [autoScroll, setAutoScroll] = useState(true)
+  const autoScrollRef = useRef(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const prevScrollHeightRef = useRef(0)
   const prevMessagesLenRef = useRef(0)
+  const isInitialLoadRef = useRef(true)
 
-  const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    bottomRef.current?.scrollIntoView({ behavior })
   }, [])
 
-  // Auto-scroll when new messages arrive (only if already at bottom)
+  // Scroll to bottom on initial load
   useEffect(() => {
-    if (autoScroll && messages.length > prevMessagesLenRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+    if (isInitialLoadRef.current && messages.length > 0 && !loading) {
+      isInitialLoadRef.current = false
+      // Use instant scroll for initial load
+      requestAnimationFrame(() => {
+        bottomRef.current?.scrollIntoView({ behavior: "instant" })
+      })
+    }
+  }, [messages.length, loading])
+
+  // Auto-scroll when new messages arrive
+  useEffect(() => {
+    if (messages.length > prevMessagesLenRef.current && !isInitialLoadRef.current) {
+      const isNewMessage = messages.length - prevMessagesLenRef.current <= 2
+      if (isNewMessage && autoScrollRef.current) {
+        requestAnimationFrame(() => {
+          bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+        })
+      }
     }
     prevMessagesLenRef.current = messages.length
-  }, [messages.length, autoScroll])
+  }, [messages.length])
 
   // Preserve scroll position when loading older messages
   useEffect(() => {
@@ -77,9 +94,9 @@ export function MessageList({
     function handleScroll() {
       if (!container) return
       const { scrollTop, scrollHeight, clientHeight } = container
-      const isNearBottom = scrollHeight - scrollTop - clientHeight < 100
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 150
       setShowScrollButton(!isNearBottom)
-      setAutoScroll(isNearBottom)
+      autoScrollRef.current = isNearBottom
 
       // Infinite scroll up - trigger loadMore when near top
       if (scrollTop < 100 && hasMore && onLoadMore && !loadingMore) {
@@ -92,6 +109,13 @@ export function MessageList({
     container.addEventListener("scroll", handleScroll)
     return () => container.removeEventListener("scroll", handleScroll)
   }, [hasMore, onLoadMore, loadingMore])
+
+  // Reset initial load flag when room changes (messages become empty then repopulate)
+  useEffect(() => {
+    if (messages.length === 0) {
+      isInitialLoadRef.current = true
+    }
+  }, [messages.length])
 
   if (loading) {
     return (
@@ -200,7 +224,7 @@ export function MessageList({
           <Button
             variant="default"
             size="icon-sm"
-            onClick={scrollToBottom}
+            onClick={() => scrollToBottom()}
             className="rounded-full bg-zinc-800 hover:bg-zinc-700 shadow-lg border border-zinc-700"
           >
             <ArrowDown className="h-4 w-4 text-zinc-300" />
