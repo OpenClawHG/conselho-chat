@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { chatApi, type Message } from "@/lib/chat-api"
-import { subscribeToRoom, unsubscribeFromRoom } from "@/lib/realtime"
+import { subscribeToRoom, unsubscribeFromRoom, cacheAgentsFromMessages } from "@/lib/realtime"
 
 const PAGE_SIZE = 50
 
@@ -43,6 +43,8 @@ export function useMessages(roomId: string | null): UseMessagesReturn {
         if (!cancelled) {
           setMessages(msgList)
           setHasMore(msgList.length >= PAGE_SIZE)
+          // Cache agent info for realtime hydration
+          cacheAgentsFromMessages(msgList)
         }
       } catch (err) {
         if (!cancelled) {
@@ -94,6 +96,8 @@ export function useMessages(roomId: string | null): UseMessagesReturn {
       const msgList = Array.isArray(data) ? data : (data as any).messages || (data as any).items || []
       setMessages((prev) => [...msgList, ...prev])
       setHasMore(msgList.length >= PAGE_SIZE)
+      // Cache newly loaded agents
+      cacheAgentsFromMessages(msgList)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar mensagens anteriores")
     } finally {
