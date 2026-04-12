@@ -3,6 +3,23 @@ import { createClient } from './supabase'
 const BUCKET = 'chat-files'
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 
+const ALLOWED_MIME_TYPES: Record<string, string[]> = {
+  'image/': ['jpeg', 'png', 'gif', 'webp', 'svg+xml'],
+  'application/': ['pdf', 'json', 'zip', 'msword', 'vnd.openxmlformats-officedocument.wordprocessingml.document'],
+  'text/': ['plain', 'markdown', 'csv'],
+}
+
+function isAllowedType(mimeType: string): boolean {
+  if (!mimeType) return false
+  for (const [prefix, subtypes] of Object.entries(ALLOWED_MIME_TYPES)) {
+    if (mimeType.startsWith(prefix)) {
+      const subtype = mimeType.slice(prefix.length)
+      return subtypes.includes(subtype)
+    }
+  }
+  return false
+}
+
 export interface FileAttachment {
   name: string
   size: number
@@ -46,6 +63,10 @@ export async function uploadFile(
 ): Promise<FileAttachment> {
   if (file.size > MAX_FILE_SIZE) {
     throw new Error('Arquivo muito grande. Maximo: ' + formatFileSize(MAX_FILE_SIZE))
+  }
+
+  if (!isAllowedType(file.type)) {
+    throw new Error('Tipo de arquivo nao permitido: ' + (file.type || 'desconhecido') + '. Use imagens, PDF, documentos ou texto.')
   }
 
   const supabase = createClient()

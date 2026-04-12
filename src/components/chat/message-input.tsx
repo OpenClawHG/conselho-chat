@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback, type KeyboardEvent, type DragEvent, type ClipboardEvent } from "react"
-import { Send, Paperclip, X, FileIcon, Loader2 } from "lucide-react"
+import { Send, Paperclip, X, FileIcon, Loader2, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import type { Agent } from "@/lib/chat-api"
@@ -35,6 +35,7 @@ export function MessageInput({
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [dragOver, setDragOver] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -116,6 +117,7 @@ export function MessageInput({
   }
 
   const handleFileSelect = (file: File) => {
+    setUploadError(null)
     const preview = isImageType(file.type) ? URL.createObjectURL(file) : undefined
     setPendingFile({ file, preview })
   }
@@ -169,12 +171,15 @@ export function MessageInput({
     if (pendingFile && roomId) {
       setUploading(true)
       setUploadProgress(0)
+      setUploadError(null)
       try {
         const attachment = await uploadFile(roomId, pendingFile.file, setUploadProgress)
         onSend(formatAttachmentMessage(attachment))
         clearPendingFile()
       } catch (err) {
-        console.error("Upload failed:", err)
+        const msg = err instanceof Error ? err.message : "Erro desconhecido no upload"
+        setUploadError(msg)
+        setTimeout(() => setUploadError(null), 6000)
       } finally {
         setUploading(false)
         setUploadProgress(0)
@@ -209,6 +214,16 @@ export function MessageInput({
       {dragOver && (
         <div className="absolute inset-0 flex items-center justify-center bg-violet-900/30 border-2 border-dashed border-violet-500 rounded-lg z-30 pointer-events-none">
           <p className="text-violet-300 font-medium text-sm">Solte o arquivo aqui</p>
+        </div>
+      )}
+
+      {uploadError && (
+        <div className="mb-2 flex items-center gap-2 rounded-lg bg-red-900/40 border border-red-700/50 px-3 py-2 text-sm text-red-300">
+          <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+          <span className="flex-1">{uploadError}</span>
+          <button onClick={() => setUploadError(null)} className="p-0.5 rounded hover:bg-red-800/50 text-red-400 hover:text-red-200">
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
 
