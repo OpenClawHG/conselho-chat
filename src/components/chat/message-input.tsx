@@ -5,10 +5,10 @@ import { Send, Paperclip, X, FileIcon, Loader2, AlertCircle } from "lucide-react
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import type { Agent } from "@/lib/chat-api"
-import { uploadFile, formatAttachmentMessage, isImageType, formatFileSize } from "@/lib/file-upload"
+import { uploadFile, formatAttachmentMetadata, isImageType, formatFileSize } from "@/lib/file-upload"
 
 interface MessageInputProps {
-  onSend: (content: string) => void
+  onSend: (content: string, metadata?: Record<string, unknown>) => void
   disabled?: boolean
   members?: Array<{ agent: Agent }>
   placeholder?: string
@@ -174,7 +174,7 @@ export function MessageInput({
       setUploadError(null)
       try {
         const attachment = await uploadFile(roomId, pendingFile.file, setUploadProgress)
-        onSend(formatAttachmentMessage(attachment))
+        onSend(attachment.name, formatAttachmentMetadata(attachment))
         clearPendingFile()
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Erro desconhecido no upload"

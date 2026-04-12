@@ -36,6 +36,7 @@ function normalizeMessage(raw: any): Message {
     type: raw?.type || raw?.content_type || 'text',
     created_at: raw?.created_at,
     agent,
+    metadata: raw?.metadata || undefined,
   }
 }
 
@@ -131,6 +132,7 @@ export interface Message {
   type: 'text' | 'system' | 'code'
   created_at: string
   agent?: Agent
+  metadata?: Record<string, unknown>
 }
 
 export interface PendingNotification {
@@ -202,7 +204,7 @@ export const chatApi = {
     return (list || []).map((m) => normalizeMessage(m))
   },
 
-  sendMessage: async (roomId: string, data: { content: string; type?: 'text' | 'code' }): Promise<Message> => {
+  sendMessage: async (roomId: string, data: { content: string; type?: 'text' | 'code'; metadata?: Record<string, unknown> }): Promise<Message> => {
     const raw = await fetchAPI<unknown>(`/api/chat/rooms/${roomId}/messages`, {
       method: 'POST',
       body: JSON.stringify(data),

@@ -62,9 +62,9 @@ export default function RoomPage() {
     }
   }, [roomId])
 
-  async function handleSend(content: string) {
+  async function handleSend(content: string, metadata?: Record<string, unknown>) {
     try {
-      await sendMessage(content)
+      await sendMessage(content, 'text', metadata)
     } catch {
       // Error handled in hook
     }

@@ -42,8 +42,28 @@ export function parseAttachment(content: string): FileAttachment | null {
   }
 }
 
+/** @deprecated Use formatAttachmentMetadata instead */
 export function formatAttachmentMessage(attachment: FileAttachment): string {
   return ATTACHMENT_PREFIX + JSON.stringify(attachment)
+}
+
+export function formatAttachmentMetadata(attachment: FileAttachment): Record<string, unknown> {
+  return { attachment }
+}
+
+export function getAttachmentFromMetadata(metadata?: Record<string, unknown>): FileAttachment | null {
+  if (!metadata?.attachment) return null
+  const a = metadata.attachment as FileAttachment
+  if (a.name && a.url) return a
+  return null
+}
+
+export function getAttachment(message: { content: string; metadata?: Record<string, unknown> }): FileAttachment | null {
+  return getAttachmentFromMetadata(message.metadata) || parseAttachment(message.content)
+}
+
+export function hasAttachment(message: { content: string; metadata?: Record<string, unknown> }): boolean {
+  return getAttachment(message) !== null
 }
 
 export function isImageType(mimeType: string): boolean {

@@ -10,7 +10,7 @@ interface UseMessagesReturn {
   messages: Message[]
   loading: boolean
   error: string | null
-  sendMessage: (content: string, type?: 'text' | 'code') => Promise<void>
+  sendMessage: (content: string, type?: 'text' | 'code', metadata?: Record<string, unknown>) => Promise<void>
   loadMore: () => Promise<void>
   hasMore: boolean
 }
@@ -107,11 +107,11 @@ export function useMessages(roomId: string | null): UseMessagesReturn {
 
   // Send message
   const sendMessage = useCallback(
-    async (content: string, type: 'text' | 'code' = 'text') => {
+    async (content: string, type: 'text' | 'code' = 'text', metadata?: Record<string, unknown>) => {
       if (!roomId) return
 
       try {
-        const message = await chatApi.sendMessage(roomId, { content, type })
+        const message = await chatApi.sendMessage(roomId, { content, type, metadata })
         // Realtime will handle adding it, but add optimistically if not already there
         setMessages((prev) => {
           if (prev.some((m) => m.id === message.id)) return prev

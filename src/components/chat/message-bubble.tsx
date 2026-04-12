@@ -6,7 +6,7 @@ import { Download, FileIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AgentAvatar } from "./agent-avatar"
 import type { Message, Agent } from "@/lib/chat-api"
-import { isAttachmentMessage, parseAttachment, isImageType, formatFileSize } from "@/lib/file-upload"
+import { hasAttachment, getAttachment, isImageType, formatFileSize } from "@/lib/file-upload"
 import ReactMarkdown from "react-markdown"
 
 interface MessageBubbleProps {
@@ -16,8 +16,8 @@ interface MessageBubbleProps {
   agent?: Agent
 }
 
-function AttachmentContent({ content, isOwn }: { content: string; isOwn: boolean }) {
-  const attachment = parseAttachment(content)
+function AttachmentContent({ content, metadata, isOwn }: { content: string; metadata?: Record<string, unknown>; isOwn: boolean }) {
+  const attachment = getAttachment({ content, metadata })
   if (!attachment) return <p className="whitespace-pre-wrap break-words">{content}</p>
 
   if (isImageType(attachment.type)) {
@@ -75,7 +75,7 @@ function AttachmentContent({ content, isOwn }: { content: string; isOwn: boolean
 
 export function MessageBubble({ message, isOwn, showAgent = true, agent }: MessageBubbleProps) {
   const msgAgent = agent || message.agent
-  const hasAttachment = isAttachmentMessage(message.content)
+  const isAttachment = hasAttachment(message)
 
   if (message.type === "system") {
     return (
@@ -105,7 +105,7 @@ export function MessageBubble({ message, isOwn, showAgent = true, agent }: Messa
       <div
         className={cn(
           "min-w-[60px]",
-          hasAttachment ? "max-w-[85%]" : "max-w-[75%]",
+          isAttachment ? "max-w-[85%]" : "max-w-[75%]",
           isOwn ? "items-end" : "items-start"
         )}
       >
@@ -131,8 +131,8 @@ export function MessageBubble({ message, isOwn, showAgent = true, agent }: Messa
               : "bg-zinc-800 text-zinc-200 rounded-bl-md"
           )}
         >
-          {hasAttachment ? (
-            <AttachmentContent content={message.content} isOwn={isOwn} />
+          {isAttachment ? (
+            <AttachmentContent content={message.content} metadata={message.metadata} isOwn={isOwn} />
           ) : message.type === "code" ? (
             <pre className="overflow-x-auto text-xs font-mono bg-zinc-900/50 rounded-lg p-2 my-1">
               <code>{message.content}</code>
