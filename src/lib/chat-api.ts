@@ -87,8 +87,8 @@ async function fetchAPI<T = unknown>(path: string, options?: RequestInit): Promi
   })
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: response.statusText }))
-    throw new Error(error.message || `Erro na API: ${response.status}`)
+    const error = await response.json().catch(() => ({ detail: response.statusText }))
+    throw new Error(error.detail || error.message || `Erro na API: ${response.status}`)
   }
 
   return response.json()

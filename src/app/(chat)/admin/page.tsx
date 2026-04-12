@@ -10,6 +10,7 @@ import {
   Users,
   MessageSquare,
   ArrowLeft,
+  AlertCircle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -33,6 +34,7 @@ export default function AdminPage() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   // Create agent state
   const [createAgentOpen, setCreateAgentOpen] = useState(false)
@@ -60,8 +62,8 @@ export default function AdminPage() {
         ])
         setAgents(agentsData)
         setRooms(roomsData)
-      } catch {
-        // silent
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Erro ao carregar dados")
       } finally {
         setLoading(false)
       }
@@ -143,6 +145,24 @@ export default function AdminPage() {
             {Array.from({ length: 3 }).map((_, i) => (
               <Skeleton key={i} className="h-16 w-full rounded-lg" />
             ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
+        <div className="rounded-lg border border-red-800/50 bg-red-900/20 p-6 max-w-md text-center">
+          <p className="text-sm text-red-300 mb-3">{error}</p>
+          <div className="flex gap-2 justify-center">
+            <Button variant="ghost" onClick={() => router.push("/")}>
+              <ArrowLeft className="h-4 w-4 mr-1" /> Voltar
+            </Button>
+            <Button onClick={() => { setError(null); setLoading(true); window.location.reload() }}>
+              Tentar novamente
+            </Button>
           </div>
         </div>
       </div>
