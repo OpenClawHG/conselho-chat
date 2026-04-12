@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback, type KeyboardEvent, type DragEvent } from "react"
+import { useState, useRef, useEffect, useCallback, type KeyboardEvent, type DragEvent, type ClipboardEvent } from "react"
 import { Send, Paperclip, X, FileIcon, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -151,7 +151,20 @@ export function MessageInput({
     if (file) handleFileSelect(file)
   }
 
-  const handleSend = async () => {
+  const handlePaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith("image/")) {
+        e.preventDefault()
+        const file = items[i].getAsFile()
+        if (file) handleFileSelect(file)
+        return
+      }
+    }
+  }
+
+    const handleSend = async () => {
     if (uploading || disabled) return
     if (pendingFile && roomId) {
       setUploading(true)
@@ -272,6 +285,7 @@ export function MessageInput({
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={disabled ? "Selecione uma sala para enviar mensagens" : placeholder}
           disabled={disabled || uploading}
           rows={1}
