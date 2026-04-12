@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import { AgentAvatar } from "./agent-avatar"
 import type { Message, Agent } from "@/lib/chat-api"
 import { isAttachmentMessage, parseAttachment, isImageType, formatFileSize } from "@/lib/file-upload"
+import ReactMarkdown from "react-markdown"
 
 interface MessageBubbleProps {
   message: Message
@@ -137,7 +138,18 @@ export function MessageBubble({ message, isOwn, showAgent = true, agent }: Messa
               <code>{message.content}</code>
             </pre>
           ) : (
-            <p className="whitespace-pre-wrap break-words">{message.content}</p>
+            <ReactMarkdown
+              components={{
+                p: ({ children }) => <p className="whitespace-pre-wrap break-words mb-1 last:mb-0">{children}</p>,
+                strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+                em: ({ children }) => <em className="italic">{children}</em>,
+                code: ({ children }) => <code className="bg-zinc-900/50 rounded px-1 py-0.5 text-xs font-mono">{children}</code>,
+                ul: ({ children }) => <ul className="list-disc list-inside ml-1 mb-1">{children}</ul>,
+                ol: ({ children }) => <ol className="list-decimal list-inside ml-1 mb-1">{children}</ol>,
+                li: ({ children }) => <li className="mb-0.5">{children}</li>,
+                a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="underline text-violet-300 hover:text-violet-200">{children}</a>,
+              }}
+            >{message.content}</ReactMarkdown>
           )}
 
           <p
