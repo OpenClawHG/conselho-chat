@@ -164,6 +164,79 @@ export interface ChatTree {
   servers: ChatTreeServer[]
 }
 
+export interface OperationalJob {
+  id: string
+  room_id: string
+  room_name: string
+  message_id: string
+  sender_name: string
+  request: string
+  title: string
+  project: string
+  kind: string
+  owner: string
+  tool_hint: string
+  status: 'pending' | 'running' | 'done' | 'blocked' | 'escalated'
+  created_at: string
+  updated_at: string
+  latest?: {
+    raw_reply?: string
+    action?: string
+    evidence?: string
+    block?: string
+    next_step?: string
+    metadata?: Record<string, unknown>
+  }
+}
+
+export interface OperationalOverview {
+  total_jobs: number
+  counts: Record<string, number>
+  stale_jobs: number
+  stale_job_ids: string[]
+}
+
+export interface RuntimeAgentStatus {
+  id: string
+  name: string
+  type: string
+  last_seen_at?: string
+  pending_notifications: number
+  stale_minutes?: number
+  is_stale: boolean
+}
+
+export interface RuntimeCronJob {
+  id?: string
+  name: string
+  model?: string | null
+  last_error?: string | null
+  consecutive_errors: number
+  last_run_at_ms?: number | null
+}
+
+export interface RuntimeCronOverview {
+  total_jobs: number
+  error_jobs: number
+  all_names: string[]
+  error_names: string[]
+  jobs: RuntimeCronJob[]
+}
+
+export interface OperationalRuntime {
+  generated_at: string
+  gateway_ok: boolean
+  gateway_error?: string | null
+  total_pending_notifications: number
+  queue_alert: boolean
+  agents: RuntimeAgentStatus[]
+  stale_agents: string[]
+  jobs_overview: OperationalOverview
+  cron_overview: RuntimeCronOverview
+  cron_alert: boolean
+  degraded: boolean
+}
+
 // ---- API Methods ----
 
 export const chatApi = {
@@ -253,4 +326,15 @@ export const chatApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  getOperationalJobs: async (): Promise<OperationalJob[]> => {
+    const data = await fetchAPI<{ jobs?: OperationalJob[] }>('/api/chat/ops/jobs')
+    return data?.jobs || []
+  },
+
+  getOperationalOverview: () =>
+    fetchAPI<OperationalOverview>('/api/chat/ops/overview'),
+
+  getOperationalRuntime: () =>
+    fetchAPI<OperationalRuntime>('/api/chat/ops/runtime'),
 }
