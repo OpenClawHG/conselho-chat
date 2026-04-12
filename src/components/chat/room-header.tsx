@@ -1,15 +1,18 @@
 "use client"
 
-import { Settings, Users } from "lucide-react"
+import { PanelRightOpen, Settings, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Room } from "@/lib/chat-api"
 
 interface RoomHeaderProps {
   room: Room
   onSettingsClick?: () => void
+  onOpsToggle?: () => void
+  opsOpen?: boolean
+  openJobs?: number
 }
 
-export function RoomHeader({ room, onSettingsClick }: RoomHeaderProps) {
+export function RoomHeader({ room, onSettingsClick, onOpsToggle, opsOpen, openJobs = 0 }: RoomHeaderProps) {
   const members = room.members || []
   const memberCount = (room as any).member_count || members.length || 0
 
@@ -29,6 +32,17 @@ export function RoomHeader({ room, onSettingsClick }: RoomHeaderProps) {
       </div>
 
       <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onOpsToggle}
+          className="text-zinc-500 hover:text-zinc-200"
+        >
+          <PanelRightOpen className="h-4 w-4" />
+          <span className="hidden sm:inline">{opsOpen ? "Ocultar Ops" : "Mostrar Ops"}</span>
+          <span className="rounded-full bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-300">{openJobs}</span>
+        </Button>
+
         <div className="flex items-center gap-1 text-xs text-zinc-500">
           <Users className="h-3.5 w-3.5" />
           <span>{memberCount} membro{memberCount !== 1 ? "s" : ""}</span>

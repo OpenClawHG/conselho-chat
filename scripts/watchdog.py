@@ -1,113 +1,222 @@
+#!/usr/bin/env python3
 """
-Watchdog externo - roda como cron job no VPS.
-Checa ultimo timestamp de atividade dos agentes no chat.
-Se algum agente ficar >30min sem acao, posta alerta no Conselho.
+Watchdog operacional do Conselho.
 
-Uso: python3 watchdog.py
-Cron: */10 * * * * cd /opt/viralmind/apps/chat && python3 scripts/watchdog.py
+- olha para jobs canônicos, não só para mensagens da sala;
+- sinaliza job parado, bloqueado ou escalado sem fechamento;
+- sincroniza incidentes no Control Tower via Planka;
+- posta alerta no Conselho apenas quando houver exceção real.
 """
 
+from __future__ import annotations
+
+import json
 import os
 import sys
-import json
-import urllib.request
 import urllib.error
-from datetime import datetime, timezone, timedelta
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
 
-API_BASE = "https://viralmind.openclawhg.tech/api/chat"
-ROOM_ID = "3ff753fe-4c88-4e6d-8ea6-a8d017d9bfbb"
-IDLE_THRESHOLD_MINUTES = 30
-
-# Agents to monitor (Claude Code and Meyer Lansky)
-AGENTS = {
-    "Claude Code": {
-        "id": "39c5cb01-505c-4f02-bbeb-bfc63e77794f",
-        "token": os.environ.get("CLAUDE_CHAT_TOKEN", "2oxnf4TFcIy911y65e2XK9ZR-RxzKV9FcEtwX88F_dw"),
-    },
-    "Meyer Lansky": {
-        "id": "b06693e5-a37c-4d23-9fe8-2486de540646",
-        "token": os.environ.get("MEYER_CHAT_TOKEN", "lf2Uxu0Hp8OkYClVzrabJYMMhI-uyAmpIjLZ9tZzqNY"),
-    },
-}
-
-# Use Hugo's token to post watchdog alerts (or a dedicated watchdog token)
-WATCHDOG_TOKEN = os.environ.get("WATCHDOG_TOKEN", "2oxnf4TFcIy911y65e2XK9ZR-RxzKV9FcEtwX88F_dw")
+from dotenv import load_dotenv
 
 
-def api_get(url, token):
-    req = urllib.request.Request(url, headers={
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    })
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode())
-    except urllib.error.URLError as e:
-        print(f"API error: {e}", file=sys.stderr)
-        return None
+API_ROOT = Path("/opt/viralmind/apps/api")
+if str(API_ROOT) not in sys.path:
+    sys.path.insert(0, str(API_ROOT))
+
+from services.operational_jobs import (
+    STALE_JOB_MINUTES,
+    get_jobs_overview,
+    list_jobs,
+    list_stale_jobs,
+    sync_generic_incident,
+    sync_operational_knowledge_base,
+    _sync_incident_card,
+)
+from services.backlog_orchestrator import (
+    activate_next_backlog_items,
+    list_overdue_activated_items,
+    sync_backlog_from_room,
+)
+from services.operational_runtime import get_runtime_health
 
 
-def api_post(url, token, data):
+load_dotenv("/root/.openclaw/.env", override=False)
+load_dotenv("/opt/viralmind/apps/api/.env", override=False)
+
+API_BASE = os.getenv("CHAT_AGENT_API_BASE", "http://127.0.0.1:8000").rstrip("/") + "/api/chat"
+ROOM_ID = os.getenv("CONSELHO_ROOM_ID", "3ff753fe-4c88-4e6d-8ea6-a8d017d9bfbb")
+WATCHDOG_TOKEN = os.getenv("WATCHDOG_TOKEN", "").strip()
+
+
+def api_post(url: str, token: str, data: dict) -> dict | None:
     body = json.dumps(data).encode()
-    req = urllib.request.Request(url, data=body, method="POST", headers={
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    })
+    req = urllib.request.Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read().decode())
-    except urllib.error.URLError as e:
-        print(f"API error: {e}", file=sys.stderr)
+    except urllib.error.URLError as exc:
+        print(f"API error: {exc}", file=sys.stderr)
         return None
 
 
-def get_last_message_time(agent_id):
-    """Get the timestamp of the agent's last message in the room."""
-    url = f"{API_BASE}/rooms/{ROOM_ID}/messages?limit=50"
-    data = api_get(url, WATCHDOG_TOKEN)
-    if not data or "messages" not in data:
+def post_room_message(message: str) -> dict | None:
+    if not WATCHDOG_TOKEN:
+        print("WATCHDOG_TOKEN ausente; alerta não enviado", file=sys.stderr)
         return None
-
-    for msg in reversed(data["messages"]):
-        if msg["sender_id"] == agent_id:
-            return datetime.fromisoformat(msg["created_at"].replace("Z", "+00:00"))
-
-    return None
-
-
-def post_alert(message):
-    """Post watchdog alert to the Conselho room."""
     url = f"{API_BASE}/rooms/{ROOM_ID}/messages"
-    api_post(url, WATCHDOG_TOKEN, {"content": message})
+    return api_post(url, WATCHDOG_TOKEN, {"content": message})
 
 
-def main():
+def post_alert(message: str) -> None:
+    post_room_message(message)
+
+
+def main() -> None:
     now = datetime.now(timezone.utc)
-    idle_agents = []
+    sync_operational_knowledge_base()
+    sync_backlog_from_room(ROOM_ID)
+    overview = get_jobs_overview()
+    stale_jobs = list_stale_jobs()
+    active_jobs = [job for job in list_jobs() if job.get("status") in {"pending", "running"}]
+    runtime = get_runtime_health()
+    runtime_alerts: list[str] = []
 
-    for name, info in AGENTS.items():
-        last_msg_time = get_last_message_time(info["id"])
-        if last_msg_time is None:
-            idle_agents.append((name, "sem mensagens encontradas"))
-            continue
-
-        idle_minutes = (now - last_msg_time).total_seconds() / 60
-
-        if idle_minutes > IDLE_THRESHOLD_MINUTES:
-            idle_agents.append((name, f"idle ha {int(idle_minutes)} min"))
-
-    if idle_agents:
-        lines = ["WATCHDOG ALERTA - Agentes inativos detectados:"]
-        for name, reason in idle_agents:
-            lines.append(f"- {name}: {reason}")
-        lines.append(f"\nRegra: nenhum agente pode ficar >{IDLE_THRESHOLD_MINUTES}min sem acao.")
-        lines.append("Executem a proxima pendencia do backlog AGORA.")
-
-        alert = "\n".join(lines)
-        post_alert(alert)
-        print(alert)
+    if not runtime.get("gateway_ok"):
+        reason = runtime.get("gateway_error") or "gateway indisponível"
+        runtime_alerts.append(f"Gateway OpenClaw indisponível: {reason}")
+        sync_generic_incident(
+            incident_key="runtime-gateway",
+            title="Runtime: gateway OpenClaw indisponível",
+            reason=reason,
+            state="blocked",
+            details=[f"generated_at={runtime.get('generated_at')}"],
+        )
     else:
-        print(f"[{now.isoformat()}] Todos agentes ativos. OK.")
+        sync_generic_incident(
+            incident_key="runtime-gateway",
+            title="Runtime: gateway OpenClaw indisponível",
+            reason="gateway saudável",
+            state="done",
+            details=[f"generated_at={runtime.get('generated_at')}"],
+        )
+
+    if runtime.get("queue_alert"):
+        pending = runtime.get("total_pending_notifications", 0)
+        runtime_alerts.append(f"Fila pendente acumulada: {pending}")
+        sync_generic_incident(
+            incident_key="runtime-queue",
+            title="Runtime: fila pendente acumulada",
+            reason=f"{pending} notificações pendentes",
+            state="running",
+            details=[f"threshold={os.getenv('CONSELHO_QUEUE_ALERT_THRESHOLD', '5')}"],
+        )
+    else:
+        sync_generic_incident(
+            incident_key="runtime-queue",
+            title="Runtime: fila pendente acumulada",
+            reason="fila saudável",
+            state="done",
+            details=[f"threshold={os.getenv('CONSELHO_QUEUE_ALERT_THRESHOLD', '5')}"],
+        )
+
+    for agent_name in runtime.get("stale_agents") or []:
+        runtime_alerts.append(f"Agente sem heartbeat recente: {agent_name}")
+        sync_generic_incident(
+            incident_key=f"runtime-agent-{agent_name.lower().replace(' ', '-')}",
+            title=f"Runtime: agente sem heartbeat - {agent_name}",
+            reason=f"{agent_name} sem last_seen recente",
+            state="blocked",
+        )
+
+    cron_overview = runtime.get("cron_overview") or {}
+    cron_error_names = set(cron_overview.get("error_names") or [])
+    for cron_job in cron_overview.get("jobs") or []:
+        name = cron_job.get("name") or "cron-sem-nome"
+        reason = cron_job.get("last_error") or "cron em erro"
+        runtime_alerts.append(f"Cron em erro: {name}")
+        sync_generic_incident(
+            incident_key=f"runtime-cron-{name.lower().replace(' ', '-')}",
+            title=f"Runtime: cron em erro - {name}",
+            reason=reason,
+            state="blocked",
+            details=[
+                f"model={cron_job.get('model') or 'desconhecido'}",
+                f"consecutive_errors={cron_job.get('consecutive_errors', 0)}",
+            ],
+        )
+    for cron_name in cron_overview.get("all_names") or []:
+        if cron_name in cron_error_names:
+            continue
+        sync_generic_incident(
+            incident_key=f"runtime-cron-{cron_name.lower().replace(' ', '-')}",
+            title=f"Runtime: cron em erro - {cron_name}",
+            reason="cron saudável",
+            state="done",
+            details=["status=ok"],
+        )
+
+    overdue_backlog = list_overdue_activated_items()
+    for item in overdue_backlog:
+        reason = f"backlog ativado sem fechamento há mais de {os.getenv('CONSELHO_BACKLOG_STALE_MINUTES', '20')} min"
+        runtime_alerts.append(f"Backlog sem resposta: {item.get('title')} ({item.get('owner')})")
+        sync_generic_incident(
+            incident_key=f"backlog-{item['id']}",
+            title=f"Backlog sem resposta - {item.get('title')}",
+            reason=reason,
+            state="running",
+            details=[f"owner={item.get('owner')}", f"activated_at={item.get('activated_at')}"],
+        )
+
+    activated_items = []
+    if not stale_jobs and not runtime.get("degraded") and not active_jobs:
+        activated_items = activate_next_backlog_items(
+            room_id=ROOM_ID,
+            post_message=post_room_message,
+            per_owner_limit=1,
+        )
+
+    if not stale_jobs and not runtime_alerts and not activated_items:
+        print(f"[{now.isoformat()}] Watchdog OK. jobs={overview['total_jobs']} stale=0 degraded=0")
+        return
+
+    lines = ["WATCHDOG ALERTA - Jobs operacionais sem fechamento detectados:"]
+    if stale_jobs:
+        for job in stale_jobs:
+            latest = job.get("latest") or {}
+            reason = latest.get("block") or latest.get("action") or "sem atualização recente"
+            lines.append(f"- {job['title']} | status={job['status']} | motivo={reason}")
+            _sync_incident_card(job, "new", f"sem atualização há mais de {STALE_JOB_MINUTES} min")
+        lines.append("")
+        lines.append(f"Regra: nenhum job pode ficar >{STALE_JOB_MINUTES}min em pending/running sem recibo válido.")
+
+    if runtime_alerts:
+        if stale_jobs:
+            lines.append("")
+        lines.append("WATCHDOG ALERTA - Degradação de runtime:")
+        for item in runtime_alerts:
+            lines.append(f"- {item}")
+
+    if activated_items:
+        if stale_jobs or runtime_alerts:
+            lines.append("")
+        lines.append("WATCHDOG AÇÃO - Próximas frentes ativadas:")
+        for item in activated_items:
+            lines.append(f"- owner={item.get('owner')} | tarefa={item.get('title')}")
+
+    alert = "\n".join(lines)
+    if stale_jobs or runtime_alerts:
+        post_alert(alert)
+    print(alert)
 
 
 if __name__ == "__main__":
