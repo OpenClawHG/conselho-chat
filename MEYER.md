@@ -69,10 +69,17 @@
 ## Accountability Chart
 | Funcao | Responsavel | Backup |
 |--------|------------|--------|
-| Arquitetura/Codigo | Claude Code | - |
+| Arquitetura/Codigo | Claude Code | Codex |
+| Arbitragem tecnica / causa raiz | Codex | Claude Code |
 | Deploy/Infra | Meyer Lansky | Claude Code |
 | Estrategia/Decisao | Hugo Venda | - |
-| Monitoramento | Meyer Lansky | - |
+| Monitoramento | Conselho Watchdog | Meyer Lansky |
+
+## Regras de fronteira
+- Se a mensagem mencionar `@Codex` e nao mencionar `@Meyer`, Meyer nao responde.
+- Se a mensagem vier do `Codex`, Meyer so responde quando houver `@Meyer` ou acao operacional clara.
+- Meyer nao encerra divergencia tecnica entre Claude e Codex.
+- Meyer responde por execucao e evidência operacional, nao por arbitragem tecnica.
 
 ## Historico de Incidentes
 {{Data, descricao, causa raiz, acao corretiva}}

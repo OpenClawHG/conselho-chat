@@ -15,6 +15,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from hashlib import sha256
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -37,6 +38,8 @@ from services.operational_jobs import (
 from services.backlog_orchestrator import (
     activate_next_backlog_items,
     list_overdue_activated_items,
+    list_actionable_backlog_items,
+    reactivate_overdue_backlog_items,
     sync_backlog_from_room,
 )
 from services.operational_runtime import get_runtime_health
@@ -48,6 +51,8 @@ load_dotenv("/opt/viralmind/apps/api/.env", override=False)
 API_BASE = os.getenv("CHAT_AGENT_API_BASE", "http://127.0.0.1:8000").rstrip("/") + "/api/chat"
 ROOM_ID = os.getenv("CONSELHO_ROOM_ID", "3ff753fe-4c88-4e6d-8ea6-a8d017d9bfbb")
 WATCHDOG_TOKEN = os.getenv("WATCHDOG_TOKEN", "").strip()
+WATCHDOG_STATE_FILE = Path("/root/.openclaw/workspace/runtime/watchdog_state.json")
+OWNER_REMINDER_MINUTES = int(os.getenv("CONSELHO_OWNER_REMINDER_MINUTES", "30"))
 
 
 def api_post(url: str, token: str, data: dict) -> dict | None:
@@ -79,6 +84,81 @@ def post_room_message(message: str) -> dict | None:
 
 def post_alert(message: str) -> None:
     post_room_message(message)
+
+
+def _load_watchdog_state() -> dict:
+    try:
+        return json.loads(WATCHDOG_STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_watchdog_state(payload: dict) -> None:
+    WATCHDOG_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    WATCHDOG_STATE_FILE.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _build_owner_action_lines(limit_per_owner: int = 2) -> list[str]:
+    grouped = list_actionable_backlog_items(limit_per_owner=limit_per_owner)
+    lines: list[str] = []
+    for owner in ("Claude Code", "Meyer Lansky"):
+        items = grouped.get(owner) or []
+        if not items:
+            continue
+        first = items[0]
+        rest = items[1:]
+        action = f"@{owner}: executar `{first.get('title')}`"
+        if rest:
+            action += " | depois: " + " ; ".join(f"`{item.get('title')}`" for item in rest)
+        lines.append(action)
+    return lines
+
+
+def _owner_action_digest(lines: list[str]) -> str:
+    return sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+def _should_post_owner_charge(
+    owner_action_lines: list[str],
+    *,
+    active_jobs: list[dict],
+    stale_jobs: list[dict],
+    runtime_alerts: list[str],
+    activated_items: list[dict],
+    reactivated_items: list[dict],
+    overdue_backlog: list[dict],
+    now: datetime,
+) -> bool:
+    if not owner_action_lines:
+        return False
+    if runtime_alerts or stale_jobs or activated_items or reactivated_items or overdue_backlog:
+        return True
+    if active_jobs:
+        return False
+
+    state = _load_watchdog_state()
+    current_digest = _owner_action_digest(owner_action_lines)
+    previous_digest = state.get("last_owner_digest")
+    previous_posted = state.get("last_owner_charge_at")
+    if previous_digest != current_digest:
+        return True
+    if not previous_posted:
+        return True
+    try:
+        previous_dt = datetime.fromisoformat(previous_posted.replace("Z", "+00:00"))
+    except Exception:
+        return True
+    elapsed_seconds = (now - previous_dt).total_seconds()
+    return elapsed_seconds >= OWNER_REMINDER_MINUTES * 60
+
+
+def _record_owner_charge(owner_action_lines: list[str], now: datetime) -> None:
+    if not owner_action_lines:
+        return
+    state = _load_watchdog_state()
+    state["last_owner_digest"] = _owner_action_digest(owner_action_lines)
+    state["last_owner_charge_at"] = now.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    _save_watchdog_state(state)
 
 
 def main() -> None:
@@ -177,15 +257,35 @@ def main() -> None:
             details=[f"owner={item.get('owner')}", f"activated_at={item.get('activated_at')}"],
         )
 
+    reactivated_items = []
+    if not stale_jobs and runtime.get("gateway_ok"):
+        reactivated_items = reactivate_overdue_backlog_items(
+            room_id=ROOM_ID,
+            post_message=post_room_message,
+            per_owner_limit=1,
+        )
+
     activated_items = []
-    if not stale_jobs and not runtime.get("degraded") and not active_jobs:
+    if not stale_jobs and runtime.get("gateway_ok"):
         activated_items = activate_next_backlog_items(
             room_id=ROOM_ID,
             post_message=post_room_message,
             per_owner_limit=1,
         )
 
-    if not stale_jobs and not runtime_alerts and not activated_items:
+    owner_action_lines = _build_owner_action_lines()
+    should_post_owner_charge = _should_post_owner_charge(
+        owner_action_lines,
+        active_jobs=active_jobs,
+        stale_jobs=stale_jobs,
+        runtime_alerts=runtime_alerts,
+        activated_items=activated_items,
+        reactivated_items=reactivated_items,
+        overdue_backlog=overdue_backlog,
+        now=now,
+    )
+
+    if not stale_jobs and not runtime_alerts and not reactivated_items and not activated_items and not should_post_owner_charge:
         print(f"[{now.isoformat()}] Watchdog OK. jobs={overview['total_jobs']} stale=0 degraded=0")
         return
 
@@ -206,16 +306,32 @@ def main() -> None:
         for item in runtime_alerts:
             lines.append(f"- {item}")
 
-    if activated_items:
+    if reactivated_items:
         if stale_jobs or runtime_alerts:
+            lines.append("")
+        lines.append("WATCHDOG AÇÃO - Frentes reativadas:")
+        for item in reactivated_items:
+            lines.append(f"- owner={item.get('owner')} | tarefa={item.get('title')} | tentativas={item.get('activation_count')}")
+
+    if activated_items:
+        if stale_jobs or runtime_alerts or reactivated_items:
             lines.append("")
         lines.append("WATCHDOG AÇÃO - Próximas frentes ativadas:")
         for item in activated_items:
             lines.append(f"- owner={item.get('owner')} | tarefa={item.get('title')}")
 
+    if owner_action_lines and should_post_owner_charge:
+        if stale_jobs or runtime_alerts or reactivated_items or activated_items:
+            lines.append("")
+        lines.append("WATCHDOG COBRANÇA - O que falta executar:")
+        for item in owner_action_lines:
+            lines.append(f"- {item}")
+
     alert = "\n".join(lines)
-    if stale_jobs or runtime_alerts:
+    if stale_jobs or runtime_alerts or should_post_owner_charge:
         post_alert(alert)
+        if should_post_owner_charge:
+            _record_owner_charge(owner_action_lines, now)
     print(alert)
 
 

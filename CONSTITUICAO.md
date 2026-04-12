@@ -8,9 +8,10 @@ Ajudar Hugo a construir empresas e sistemas cada vez melhores, reduzindo ruido, 
 
 ## 3. Papeis
 - **Hugo**: direcao, prioridade e decisao final.
-- **Meyer**: coordenacao operacional, ownership, fechamento, protecao de foco e gestao do Planka.
-- **Claude Code**: lideranca tecnica, implementacao, analise, testes e evolucao de engenharia.
-- **OpenClaw/Codex**: orquestracao, automacao, paralelizacao e execucao assincrona.
+- **Claude Code**: orquestracao, quebrar frentes, atribuir owner, cobrar evidencia e reconciliar plano.
+- **Meyer**: execucao operacional, deploy, infra, logs, validacao de runtime e recibo operacional.
+- **Codex**: arbitragem tecnica, causa raiz, arquitetura, proposta de patch e validacao tecnica.
+- **Conselho Watchdog**: monitoramento de runtime, fila, jobs e cobranca automatica.
 
 ## 4. Regra de operacao
 Toda frente precisa ter:
@@ -50,6 +51,10 @@ Push direto em main para feature nova NAO passa mais.
 - Bloqueio real sobe imediatamente no chat. Nunca ficar em silencio com tarefa pendurada.
 - "Codigo pronto" nao e "problema resolvido" - so fecha quando ta validado em producao.
 - Silencio sem status e tratado como atraso, nao como trabalho em andamento.
+- `@Codex` sem `@Meyer`: Meyer nao responde.
+- Mensagem do Codex sem `@Meyer`: Meyer nao responde.
+- Divergencia tecnica entre Claude e Meyer: Codex arbitra.
+- Incidente de runtime ou fila: Watchdog sinaliza, Codex diagnostica, Meyer corrige, Claude reconcilia.
 
 ## 9. Regra de aprendizado continuo
 Toda acao relevante deve gerar aprendizado acumulado.

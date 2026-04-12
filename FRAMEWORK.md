@@ -48,8 +48,10 @@ Todo projeto novo nasce com:
 | Papel | Agente | Responsabilidades |
 |-------|--------|-------------------|
 | CEO | Hugo Venda | Estrategia, decisoes finais, priorizacao, direcao criativa |
-| CTO | Claude Code | Arquitetura, codigo, automacoes, revisao tecnica, analise |
-| COO | Meyer Lansky | Deploy, infra, monitoramento, integracoes externas, operacoes |
+| Orquestrador | Claude Code | Quebrar frentes, atribuir owner, cobrar evidencia, reconciliar plano |
+| Operacoes | Meyer Lansky | Deploy, infra, monitoramento, integracoes externas, validacao operacional |
+| Arbitro Tecnico | Codex | Causa raiz, arquitetura, patch, validacao tecnica |
+| Monitor | Conselho Watchdog | Runtime, fila, jobs, backlog e cobranca automatica |
 
 ### Niveis de Autonomia
 - **Nivel 1 (autonomo):** Deploys de rotina, bug fixes, reports
@@ -83,8 +85,8 @@ Todo projeto novo nasce com:
 
 ## 6. Gestao de Tarefas
 
-- **Ferramenta:** Trello (boards por projeto) + integracao API com Conselho
-- **Temporario:** Conselho como Kanban ate Trello estar configurado
+- **Ferramenta:** Planka (boards por projeto) + integracao API com Conselho
+- **Regra:** Conselho e Planka precisam ficar reconciliados; board e a fonte de verdade para tarefa e status
 - **Notificacoes:** Cards concluidos notificam no canal do projeto
 
 ## 7. Aprendizado Continuo
