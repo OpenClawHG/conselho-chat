@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { chatApi, type Room } from "@/lib/chat-api"
 import { useMessages } from "@/hooks/use-messages"
 import { RoomHeader } from "@/components/chat/room-header"
@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 export default function RoomPage() {
   const params = useParams()
+  const router = useRouter()
   const roomId = params?.roomId as string
   const [room, setRoom] = useState<Room | null>(null)
   const [roomLoading, setRoomLoading] = useState(true)
@@ -24,15 +25,42 @@ export default function RoomPage() {
     if (!roomId) return
     let cancelled = false
 
+    async function redirectToViralMindMain() {
+      try {
+        const roomsData = await chatApi.getRooms()
+        const roomsList = Array.isArray(roomsData) ? roomsData : (roomsData as any).rooms || []
+        const viralmindMain = roomsList.find((candidate: Room) => candidate.name === "ViralMind / geral")
+        if (!cancelled && viralmindMain && viralmindMain.id !== roomId) {
+          router.replace(`/rooms/${viralmindMain.id}`)
+          return true
+        }
+      } catch {
+        // fallback silencioso: mantem erro atual
+      }
+      return false
+    }
+
     async function load() {
       setRoomLoading(true)
       setRoomError(null)
       try {
         const data = await chatApi.getRoom(roomId)
-        if (!cancelled) setRoom(data)
+        if (!cancelled) {
+          if (data.name?.startsWith("Archive / ViralMind /")) {
+            const redirected = await redirectToViralMindMain()
+            if (!redirected) {
+              setRoom(data)
+            }
+          } else {
+            setRoom(data)
+          }
+        }
       } catch (err) {
         if (!cancelled) {
-          setRoomError(err instanceof Error ? err.message : "Erro ao carregar sala")
+          const redirected = await redirectToViralMindMain()
+          if (!redirected) {
+            setRoomError(err instanceof Error ? err.message : "Erro ao carregar sala")
+          }
         }
       } finally {
         if (!cancelled) setRoomLoading(false)
@@ -41,7 +69,7 @@ export default function RoomPage() {
 
     load()
     return () => { cancelled = true }
-  }, [roomId])
+  }, [roomId, router])
 
   // Detect current user agent
   useEffect(() => {
