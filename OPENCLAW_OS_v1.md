@@ -1,6 +1,6 @@
 # OpenClaw OS v1 - Sistema Operacional de Gestao
 
-> Debatido e consolidado por Claude Code + Meyer Lansky em 2026-04-12
+> Debatido e consolidado por Claude Code + Agrippa em 2026-04-12
 > Pendente aprovacao de Hugo Venda
 
 ## 1. Estrutura Organizacional
@@ -8,7 +8,7 @@
 ### Camada A: Holding / Conselho
 - **Hugo Venda**: direcao, capital, prioridade final
 - **Claude Code**: orquestracao, priorizacao operacional e reconciliacao
-- **Meyer Lansky**: execucao operacional, deploy, infra e validacao
+- **Agrippa**: execucao operacional, deploy, infra e validacao
 - **Codex**: arbitragem tecnica, causa raiz, arquitetura e patch
 - **Conselho Watchdog**: monitoramento e cobranca automatica
 - **Conselho OpenClaw**: forum central de coordenacao
@@ -30,7 +30,7 @@ Empresas ativas:
 
 ### Camada C: Funcoes Compartilhadas (escalar quando necessario)
 - Engenharia e orquestracao (Claude Code)
-- Operacoes e execucao (Meyer Lansky)
+- Operacoes e execucao (Agrippa)
 - Arbitragem tecnica e debug (Codex)
 - Agentes especializados por projeto (futuro)
 
@@ -59,11 +59,11 @@ Cada empresa tem:
 | 3 - Aprovacao Hugo | Para ate aprovar | Gasto, contrato, estrategia, risco financeiro/juridico |
 
 ### Precedencia de papel
-- `@Codex` sem `@Meyer`: Meyer nao responde
-- mensagem do Codex sem `@Meyer`: Meyer nao responde
-- `@Meyer` com acao operacional clara: Meyer executa
-- divergencia tecnica entre Claude e Meyer: Codex arbitra
-- incidente de runtime ou fila: Watchdog sinaliza, Codex diagnostica, Meyer corrige, Claude reconcilia
+- `@Codex` sem `@Agrippa`: Agrippa nao responde
+- mensagem do Codex sem `@Agrippa`: Agrippa nao responde
+- `@Agrippa` com acao operacional clara: Agrippa executa
+- divergencia tecnica entre Claude e Agrippa: Codex arbitra
+- incidente de runtime ou fila: Watchdog sinaliza, Codex diagnostica, Agrippa corrige, Claude reconcilia
 
 ## 4. Cadencia Operacional
 
