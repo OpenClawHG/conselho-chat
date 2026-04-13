@@ -16,6 +16,10 @@ Base minima de memoria compilada do Conselho OpenClaw.
   - [Agrippa](./agents/agrippa.md)
   - [Codex](./agents/codex.md)
   - [Claude Code](./agents/claude.md)
+  - [Edwin](./agents/edwin.md)
+  - [Rita](./agents/rita.md)
+  - [Ada](./agents/ada.md)
+  - [Ogilvy](./agents/ogilvy.md)
 
 ## Regra de convivência
 - GitHub: codigo, specs, historico tecnico
