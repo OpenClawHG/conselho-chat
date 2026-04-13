@@ -2,14 +2,11 @@
 
 import { useState, useEffect } from "react"
 import { useParams } from "next/navigation"
-import { cn } from "@/lib/utils"
 import { chatApi, type Room } from "@/lib/chat-api"
 import { useMessages } from "@/hooks/use-messages"
-import { useOperational } from "@/hooks/use-operational"
 import { RoomHeader } from "@/components/chat/room-header"
 import { MessageList } from "@/components/chat/message-list"
 import { MessageInput } from "@/components/chat/message-input"
-import { OpsPanel } from "@/components/chat/ops-panel"
 import { Skeleton } from "@/components/ui/skeleton"
 
 export default function RoomPage() {
@@ -19,19 +16,8 @@ export default function RoomPage() {
   const [roomLoading, setRoomLoading] = useState(true)
   const [roomError, setRoomError] = useState<string | null>(null)
   const [currentAgentId, setCurrentAgentId] = useState<string | undefined>()
-  const [opsOpen, setOpsOpen] = useState(false)
 
   const { messages, loading: msgsLoading, sendMessage, loadMore, hasMore } = useMessages(roomId)
-  const { jobs, runtime, loading: opsLoading, error: opsError, refresh: refreshOps } = useOperational({ roomId })
-
-  useEffect(() => {
-    if (typeof window === "undefined") return
-    const media = window.matchMedia("(min-width: 1024px)")
-    const apply = () => setOpsOpen(media.matches)
-    apply()
-    media.addEventListener("change", apply)
-    return () => media.removeEventListener("change", apply)
-  }, [])
 
   // Load room data
   useEffect(() => {
@@ -125,43 +111,23 @@ export default function RoomPage() {
   }
 
   return (
-    <div className="flex-1 flex min-h-0">
-      <div className={cn("flex min-h-0 flex-1 flex-col", !opsOpen && "w-full")}>
-        <RoomHeader
-          room={room}
-          onOpsToggle={() => setOpsOpen((prev) => !prev)}
-          opsOpen={opsOpen}
-          openJobs={jobs.filter((job) => job.status !== "done").length}
-        />
+    <div className="flex min-h-0 flex-1 flex-col">
+      <RoomHeader room={room} />
 
-        <div className={cn("min-h-0 flex-1 flex-col", opsOpen ? "hidden lg:flex" : "flex")}>
-          <MessageList
-            messages={messages}
-            currentAgentId={currentAgentId}
-            loading={msgsLoading}
-            onLoadMore={loadMore}
-            hasMore={hasMore}
-          />
+      <MessageList
+        messages={messages}
+        currentAgentId={currentAgentId}
+        loading={msgsLoading}
+        onLoadMore={loadMore}
+        hasMore={hasMore}
+      />
 
-          <MessageInput
-            onSend={handleSend}
-            roomId={roomId}
-            members={room.members || []}
-            placeholder={`Mensagem para ${room.name}...`}
-          />
-        </div>
-      </div>
-
-      <div className={cn("min-h-0 border-l border-zinc-800", opsOpen ? "flex w-full lg:w-[390px]" : "hidden")}>
-        <OpsPanel
-          jobs={jobs}
-          runtime={runtime}
-          loading={opsLoading}
-          error={opsError}
-          onRefresh={refreshOps}
-          roomName={room.name}
-        />
-      </div>
+      <MessageInput
+        onSend={handleSend}
+        roomId={roomId}
+        members={room.members || []}
+        placeholder={`Mensagem para ${room.name}...`}
+      />
     </div>
   )
 }
