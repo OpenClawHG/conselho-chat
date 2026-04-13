@@ -55,6 +55,7 @@ ROOM_ID = os.getenv("CONSELHO_ROOM_ID", "3ff753fe-4c88-4e6d-8ea6-a8d017d9bfbb")
 WATCHDOG_TOKEN = os.getenv("WATCHDOG_TOKEN", "").strip()
 WATCHDOG_STATE_FILE = Path("/root/.openclaw/workspace/runtime/watchdog_state.json")
 OWNER_REMINDER_MINUTES = int(os.getenv("CONSELHO_OWNER_REMINDER_MINUTES", "30"))
+WATCHDOG_ENABLED = os.getenv("CONSELHO_WATCHDOG_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def api_post(url: str, token: str, data: dict) -> dict | None:
@@ -185,6 +186,9 @@ def _record_owner_charge(owner_action_lines: list[str], now: datetime) -> None:
 
 
 def main() -> None:
+    if not WATCHDOG_ENABLED:
+        print("Conselho watchdog disabled by config.")
+        return
     now = datetime.now(timezone.utc)
     sync_operational_knowledge_base()
     sync_backlog_from_room(ROOM_ID)
