@@ -2,14 +2,19 @@
 
 import { Settings, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import type { Room } from "@/lib/chat-api"
 
 interface RoomHeaderProps {
   room: Room
   onSettingsClick?: () => void
+  liveSummary?: {
+    working: number
+    blocked: number
+  }
 }
 
-export function RoomHeader({ room, onSettingsClick }: RoomHeaderProps) {
+export function RoomHeader({ room, onSettingsClick, liveSummary }: RoomHeaderProps) {
   const members = room.members || []
   const memberCount = (room as any).member_count || members.length || 0
 
@@ -29,6 +34,16 @@ export function RoomHeader({ room, onSettingsClick }: RoomHeaderProps) {
       </div>
 
       <div className="flex items-center gap-2">
+        {liveSummary && (
+          <>
+            <Badge className="border border-emerald-500/20 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/10">
+              {liveSummary.working} working
+            </Badge>
+            <Badge className="border border-amber-500/20 bg-amber-500/10 text-amber-200 hover:bg-amber-500/10">
+              {liveSummary.blocked} blocked
+            </Badge>
+          </>
+        )}
         <div className="flex items-center gap-1 text-xs text-zinc-500">
           <Users className="h-3.5 w-3.5" />
           <span>{memberCount} membro{memberCount !== 1 ? "s" : ""}</span>
