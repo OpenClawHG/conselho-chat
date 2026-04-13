@@ -28,3 +28,17 @@ Fonte:
 Fonte:
 - Revisao do codigo local do ViralMind
 - Benchmark publico em `viralist.ai`
+
+## 2026-04-13
+- Estrutura empresarial da ViralMind definida com:
+  - Edwin (CEO)
+  - Rita (Produto)
+  - Ada (Tecnologia)
+  - Ogilvy (Growth)
+- Separacao explicita entre:
+  - Conselho da holding
+  - canais da empresa
+
+Fonte:
+- desenho organizacional da holding
+- org chart inicial da ViralMind

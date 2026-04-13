@@ -75,5 +75,19 @@ Transformar inteligencia em execucao:
 - campaign generator
 - recomendacoes de proximo conteudo
 
+## Estrutura da empresa
+### CEO
+- Edwin
+
+### Lideranca direta
+- Rita — Produto
+- Ada — Tecnologia
+- Ogilvy — Growth
+
+## Regra de governanca
+- ViralMind opera nos canais da propria empresa
+- Conselho so recebe report, excecao e decisao de holding
+- Edwin e o responsavel por reportar para o Conselho
+
 ## Documento detalhado
 - [viralmind-product-roadmap-2026-04-13.md](/opt/viralmind/docs/viralmind-product-roadmap-2026-04-13.md)
