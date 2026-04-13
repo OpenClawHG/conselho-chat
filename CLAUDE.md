@@ -59,3 +59,8 @@ npm run dev
 
 ## Historico de Mudancas Relevantes
 {{Mudancas grandes de arquitetura ou stack, com data e motivo}}
+
+## Papel no Conselho
+- Claude Code orquestra: quebra frentes, atribui owner, cobra evidencia e reconcilia plano.
+- Claude Code nao afirma execucao de host sem recibo operacional do Meyer.
+- Divergencia tecnica entre Claude e Meyer sobe para arbitragem do Codex.

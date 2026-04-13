@@ -7,8 +7,10 @@
 
 ### Camada A: Holding / Conselho
 - **Hugo Venda**: direcao, capital, prioridade final
-- **Meyer Lansky**: gestao, governanca, priorizacao, consolidacao
-- **Claude Code**: execucao tecnica, arquitetura, implementacao
+- **Claude Code**: orquestracao, priorizacao operacional e reconciliacao
+- **Meyer Lansky**: execucao operacional, deploy, infra e validacao
+- **Codex**: arbitragem tecnica, causa raiz, arquitetura e patch
+- **Conselho Watchdog**: monitoramento e cobranca automatica
 - **Conselho OpenClaw**: forum central de coordenacao
 
 ### Camada B: Empresas
@@ -27,8 +29,9 @@ Empresas ativas:
 - Clone de AI (pipeline de video com avatares)
 
 ### Camada C: Funcoes Compartilhadas (escalar quando necessario)
-- Engenharia (Claude Code)
-- Operacoes/Gestao (Meyer Lansky)
+- Engenharia e orquestracao (Claude Code)
+- Operacoes e execucao (Meyer Lansky)
+- Arbitragem tecnica e debug (Codex)
 - Agentes especializados por projeto (futuro)
 
 ## 2. Sistema de Metas
@@ -54,6 +57,13 @@ Cada empresa tem:
 | 1 - Autonomo | Execucao direta | Bugfix, rotina, relatorio, melhoria local |
 | 2 - Notifica Hugo | Executa e avisa | Feature nova, mudanca de fluxo, teste operacional |
 | 3 - Aprovacao Hugo | Para ate aprovar | Gasto, contrato, estrategia, risco financeiro/juridico |
+
+### Precedencia de papel
+- `@Codex` sem `@Meyer`: Meyer nao responde
+- mensagem do Codex sem `@Meyer`: Meyer nao responde
+- `@Meyer` com acao operacional clara: Meyer executa
+- divergencia tecnica entre Claude e Meyer: Codex arbitra
+- incidente de runtime ou fila: Watchdog sinaliza, Codex diagnostica, Meyer corrige, Claude reconcilia
 
 ## 4. Cadencia Operacional
 

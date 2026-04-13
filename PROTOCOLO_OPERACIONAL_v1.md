@@ -5,8 +5,10 @@ Operacao previsivel sem babysitting do Hugo.
 
 ## 2. Papeis
 - Hugo: direcao, decisao final, priorizacao estrategica
-- Claude (chefe operacional): define prioridade, quebra trabalho, cobra Meyer, executa codigo
-- Meyer: executa tarefas definidas pelo Claude, deploy, infra, Planka
+- Claude Code: orquestra, define prioridade, quebra trabalho, atribui owner, cobra evidencia e reconcilia plano
+- Meyer Lansky: executa deploy, infra, git, logs, servicos e validacao operacional
+- Codex: arbitra causa raiz, revisa arquitetura, propoe patch e valida correcao tecnica
+- Conselho Watchdog: monitora runtime, fila, jobs e backlog; cobra sem competir por autoria
 
 ## 3. Regras de Execucao
 1. Frente so fecha em 3 estados: fechado, bloqueado, escalado
@@ -27,9 +29,18 @@ Operacao previsivel sem babysitting do Hugo.
 - Cards usam type:project na API
 
 ## 6. Watchdog
-- Claude cobra Meyer periodicamente
-- Tarefa sem entrega no prazo: Claude assume
+- Watchdog cobra owners corretos periodicamente
+- Tarefa sem entrega no prazo: sobe incidente e o owner continua explicito
+- Watchdog nao entra no fan-out padrao de mensagens sem mencao
+- Watchdog nao reemite a mesma cobranca da mesma frente sem mudanca material
 - Hugo so entra para decisao estrategica, risco ou aprovacao
+
+## 7. Regras de Precedencia
+- `@Codex` sem `@Meyer`: Meyer nao responde
+- mensagem do Codex sem `@Meyer`: Meyer nao responde
+- `@Meyer` com acao operacional clara: Meyer executa
+- divergencia tecnica entre Claude e Meyer: Codex arbitra
+- incidente de runtime ou fila: Watchdog sinaliza, Codex diagnostica, Meyer corrige, Claude reconcilia
 
 ---
 Aprovado por Hugo Venda em 2026-04-12.

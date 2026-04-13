@@ -8,7 +8,7 @@ type: project
 
 ## 2026-04-11
 1. Meyer confirma acoes sem executar - sempre verificar via API antes de aceitar
-2. Meyer nao consegue criar contas em servicos externos (Trello) - e um bot
+2. Meyer nao consegue criar contas em servicos externos por conta propria - exigir provisionamento humano ou integracao formal
 3. Credenciais fake detectadas 2x - exigir prova/verificacao
 4. Realtime Supabase precisa de singleton client (multiplas instancias cancelam channels)
 5. Hugo quer proatividade, nao relatorios - agir como dono

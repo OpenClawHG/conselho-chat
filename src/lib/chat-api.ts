@@ -206,6 +206,36 @@ export interface RuntimeAgentStatus {
   is_stale: boolean
 }
 
+export interface RuntimeAgentActivity {
+  agent_id: string
+  name: string
+  active_jobs: number
+  blocked_jobs: number
+  done_jobs: number
+  last_useful_at?: string | null
+  last_useful_kind?: string | null
+  last_evidence_at?: string | null
+  idle_minutes?: number | null
+  is_idle: boolean
+  has_waiting_work: boolean
+  next_task?: string | null
+  backlog_counts: Record<string, number>
+  latest_job_title?: string | null
+}
+
+export interface BacklogOverview {
+  total_items: number
+  counts: Record<string, number>
+}
+
+export interface BacklogOwnerOverview {
+  owner: string
+  total_items: number
+  counts: Record<string, number>
+  next_task?: string | null
+  next_status?: string | null
+}
+
 export interface RuntimeCronJob {
   id?: string
   name: string
@@ -231,7 +261,11 @@ export interface OperationalRuntime {
   queue_alert: boolean
   agents: RuntimeAgentStatus[]
   stale_agents: string[]
+  idle_agents: string[]
+  agent_activity: RuntimeAgentActivity[]
   jobs_overview: OperationalOverview
+  backlog_overview: BacklogOverview
+  backlog_owner_overview: BacklogOwnerOverview[]
   cron_overview: RuntimeCronOverview
   cron_alert: boolean
   degraded: boolean
