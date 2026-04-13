@@ -12,6 +12,11 @@ ViralMind e a aposta mais forte da holding hoje: um sistema de inteligencia vira
   - scoring TRIBE para scripts e videos
   - agregacao de padroes virais
   - geracao de roteiros rankeados por TRIBE
+- O estado atual do banco mostra uma lacuna importante entre tese e realidade:
+  - `trending_videos = 0`
+  - `viral_patterns = 0`
+  - `scripts = 0`
+  - `video_analyses = 11`
 - Stack atual:
   - Next.js
   - FastAPI
@@ -29,7 +34,8 @@ ViralMind e a aposta mais forte da holding hoje: um sistema de inteligencia vira
   - entender por que esta performando
   - transformar isso em padroes reutilizaveis
   - usar esses padroes para orientar novas pecas
-- O melhor wedge inicial pode ser agencias e pequenos times de marca, nao criadores solo.
+- O wedge inicial mais forte agora e:
+  - times e criadores que ja produzem conteudo longo ou lives e precisam de clipping e reutilizacao com mais inteligencia
 
 ## Decisoes
 - Comecar a maturidade da Conselho Wiki pela ViralMind.
@@ -97,3 +103,15 @@ As salas antigas da empresa foram arquivadas para evitar fragmentacao precoce.
 
 ## Documento detalhado
 - [viralmind-product-roadmap-2026-04-13.md](/opt/viralmind/docs/viralmind-product-roadmap-2026-04-13.md)
+- [viralmind-company-brief-2026-04-13.md](/opt/viralmind/docs/viralmind-company-brief-2026-04-13.md)
+- [viralmind-market-map-2026-04-13.md](/opt/viralmind/docs/viralmind-market-map-2026-04-13.md)
+- [viralmind-gtm-2026-04-13.md](/opt/viralmind/docs/viralmind-gtm-2026-04-13.md)
+- [viralmind-scorecard-2026-04-13.md](/opt/viralmind/docs/viralmind-scorecard-2026-04-13.md)
+- [viralmind-docs-checklist-2026-04-13.md](/opt/viralmind/docs/viralmind-docs-checklist-2026-04-13.md)
+- [viralmind-live-clipping-roadmap-2026-04-13.md](/opt/viralmind/docs/viralmind-live-clipping-roadmap-2026-04-13.md)
+- [viralmind-sprint-2026-04-13.md](/opt/viralmind/docs/viralmind-sprint-2026-04-13.md)
+- [viralmind-pattern-explorer-prd-2026-04-13.md](/opt/viralmind/docs/viralmind-pattern-explorer-prd-2026-04-13.md)
+- [viralmind-post-stream-clipper-prd-2026-04-13.md](/opt/viralmind/docs/viralmind-post-stream-clipper-prd-2026-04-13.md)
+- [viralmind-implementation-plan-2026-04-13.md](/opt/viralmind/docs/viralmind-implementation-plan-2026-04-13.md)
+- [viralmind-weekly-review-template-2026-04-13.md](/opt/viralmind/docs/viralmind-weekly-review-template-2026-04-13.md)
+- [viralmind-ceo-update-template-2026-04-13.md](/opt/viralmind/docs/viralmind-ceo-update-template-2026-04-13.md)
