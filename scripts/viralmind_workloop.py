@@ -43,8 +43,8 @@ ROOM_ID = os.getenv("VIRALMIND_ROOM_ID", "c091861b-161e-415a-bd79-1b4d559c844b")
 CHAT_DB = os.getenv("CHAT_DATABASE_URL", "").strip()
 API_BASE = os.getenv("CHAT_AGENT_API_BASE", "http://127.0.0.1:8000").rstrip("/") + "/api/chat"
 CODEX_TOKEN = os.getenv("CODEX_AGENT_TOKEN", "").strip()
-IDLE_MINUTES = int(os.getenv("VIRALMIND_IDLE_MINUTES", "10"))
-REMINDER_COOLDOWN_MINUTES = int(os.getenv("VIRALMIND_REMINDER_COOLDOWN_MINUTES", "20"))
+IDLE_MINUTES = int(os.getenv("VIRALMIND_IDLE_MINUTES", "20"))
+REMINDER_COOLDOWN_MINUTES = int(os.getenv("VIRALMIND_REMINDER_COOLDOWN_MINUTES", "40"))
 STATE_FILE = Path("/root/.openclaw/workspace/runtime/viralmind_workloop_state.json")
 ACTIVE_LISTS = {"Priorizado", "Em Andamento"}
 EVIDENCE_PATTERNS = [
@@ -145,6 +145,7 @@ def _get_board_cards() -> list[dict]:
                 "name": spec["name"],
                 "owner": spec["owner"],
                 "list_name": lists.get(match.get("listId")),
+                "artifact_paths": spec.get("artifact_paths") or [],
             }
         )
     return rows
@@ -292,6 +293,9 @@ def main() -> None:
             continue
         reason = _build_idle_reason(owner, last_update=last_update, last_evidence=last_evidence)
         guidance = "Responder agora com: `Card`, `Status`, `Evidência`, `Próximo passo`, `Bloqueio`."
+        artifact_paths = card.get("artifact_paths") or []
+        if artifact_paths:
+            guidance += " Evidência preferida: commit compartilhado tocando " + ", ".join(f"`{path}`" for path in artifact_paths) + "."
         if evidence_excerpt:
             guidance += f" Última evidência vista: {evidence_excerpt}"
         lines.append(
