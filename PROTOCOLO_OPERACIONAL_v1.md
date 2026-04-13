@@ -6,7 +6,7 @@ Operacao previsivel sem babysitting do Hugo.
 ## 2. Papeis
 - Hugo: direcao, decisao final, priorizacao estrategica
 - Claude Code: orquestra, define prioridade, quebra trabalho, atribui owner, cobra evidencia e reconcilia plano
-- Meyer Lansky: executa deploy, infra, git, logs, servicos e validacao operacional
+- Agrippa: executa deploy, infra, git, logs, servicos e validacao operacional
 - Codex: arbitra causa raiz, revisa arquitetura, propoe patch e valida correcao tecnica
 - Conselho Watchdog: monitora runtime, fila, jobs e backlog; cobra sem competir por autoria
 
@@ -36,11 +36,11 @@ Operacao previsivel sem babysitting do Hugo.
 - Hugo so entra para decisao estrategica, risco ou aprovacao
 
 ## 7. Regras de Precedencia
-- `@Codex` sem `@Meyer`: Meyer nao responde
-- mensagem do Codex sem `@Meyer`: Meyer nao responde
-- `@Meyer` com acao operacional clara: Meyer executa
-- divergencia tecnica entre Claude e Meyer: Codex arbitra
-- incidente de runtime ou fila: Watchdog sinaliza, Codex diagnostica, Meyer corrige, Claude reconcilia
+- `@Codex` sem `@Agrippa`: Agrippa nao responde
+- mensagem do Codex sem `@Agrippa`: Agrippa nao responde
+- `@Agrippa` com acao operacional clara: Agrippa executa
+- divergencia tecnica entre Claude e Agrippa: Codex arbitra
+- incidente de runtime ou fila: Watchdog sinaliza, Codex diagnostica, Agrippa corrige, Claude reconcilia
 
 ---
 Aprovado por Hugo Venda em 2026-04-12.

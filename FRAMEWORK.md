@@ -1,5 +1,5 @@
 # OpenClaw HG - Framework Padrao de Empresas
-> Decidido em 2026-04-11 | Conselho OpenClaw | Hugo + Claude Code + Meyer Lansky
+> Decidido em 2026-04-11 | Conselho OpenClaw | Hugo + Claude Code + Agrippa
 
 ## 1. Stack Tecnica Padrao
 
@@ -24,7 +24,7 @@
 ### Organizacao GitHub
 - **Org:** OpenClawHG
 - **Repos:** viralmind-saas, unicopag-app, conselho-chat, clone-ai-pipeline, etc.
-- **Acesso:** Hugo (owner), Claude Code (push), Meyer Lansky (push)
+- **Acesso:** Hugo (owner), Claude Code (push), Agrippa (push)
 - **PRs obrigatorios** para main, code review entre agentes
 - **CI/CD automatizado** (lint + test + deploy)
 
@@ -49,7 +49,7 @@ Todo projeto novo nasce com:
 |-------|--------|-------------------|
 | CEO | Hugo Venda | Estrategia, decisoes finais, priorizacao, direcao criativa |
 | Orquestrador | Claude Code | Quebrar frentes, atribuir owner, cobrar evidencia, reconciliar plano |
-| Operacoes | Meyer Lansky | Deploy, infra, monitoramento, integracoes externas, validacao operacional |
+| Operacoes | Agrippa | Deploy, infra, monitoramento, integracoes externas, validacao operacional |
 | Arbitro Tecnico | Codex | Causa raiz, arquitetura, patch, validacao tecnica |
 | Monitor | Conselho Watchdog | Runtime, fila, jobs, backlog e cobranca automatica |
 
