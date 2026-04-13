@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { chatApi, type Room } from "@/lib/chat-api"
 import { useMessages } from "@/hooks/use-messages"
-import { useOperational } from "@/hooks/use-operational"
+import { useRoomPresence } from "@/hooks/use-room-presence"
 import { RoomHeader } from "@/components/chat/room-header"
 import { MessageList } from "@/components/chat/message-list"
 import { MessageInput } from "@/components/chat/message-input"
@@ -21,10 +21,10 @@ export default function RoomPage() {
   const [currentAgentId, setCurrentAgentId] = useState<string | undefined>()
 
   const { messages, loading: msgsLoading, sendMessage, loadMore, hasMore } = useMessages(roomId)
-  const { runtime, loading: operationalLoading, error: operationalError } = useOperational({
+  const { presence, loading: presenceLoading, error: presenceError } = useRoomPresence(
     roomId,
-    pollMs: 15000,
-  })
+    15000,
+  )
 
   // Load room data
   useEffect(() => {
@@ -144,12 +144,9 @@ export default function RoomPage() {
     )
   }
 
-  const roomMemberNames = new Set((room.members || []).map((member) => member.agent.name))
-  const teamActivity = (runtime?.agent_activity || []).filter((item) => roomMemberNames.has(item.name))
-  const teamStatus = (runtime?.agents || []).filter((item) => roomMemberNames.has(item.name))
   const liveSummary = {
-    working: teamActivity.filter((item) => item.active_jobs > 0).length,
-    blocked: teamActivity.filter((item) => item.blocked_jobs > 0 || (item.is_idle && item.has_waiting_work)).length,
+    working: (presence?.members || []).filter((item) => item.state === "working").length,
+    blocked: (presence?.members || []).filter((item) => item.state === "blocked").length,
   }
 
   return (
@@ -176,10 +173,9 @@ export default function RoomPage() {
       <aside className="hidden xl:flex xl:w-[360px] xl:shrink-0">
         <TeamPresencePanel
           room={room}
-          loading={operationalLoading}
-          error={operationalError}
-          agentActivity={teamActivity}
-          agentStatus={teamStatus}
+          loading={presenceLoading}
+          error={presenceError}
+          presence={presence}
         />
       </aside>
     </div>

@@ -7,14 +7,13 @@ import { Avatar } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
-import type { Room, RuntimeAgentActivity, RuntimeAgentStatus } from "@/lib/chat-api"
+import type { Room, RoomPresence } from "@/lib/chat-api"
 
 interface TeamPresencePanelProps {
   room: Room
   loading?: boolean
   error?: string | null
-  agentActivity?: RuntimeAgentActivity[]
-  agentStatus?: RuntimeAgentStatus[]
+  presence?: RoomPresence | null
 }
 
 type PresenceState = "working" | "blocked" | "idle"
@@ -37,14 +36,6 @@ function relativeTime(dateStr?: string | null): string {
     addSuffix: true,
     locale: ptBR,
   })
-}
-
-function resolveState(activity?: RuntimeAgentActivity): PresenceState {
-  if (!activity) return "idle"
-  if (activity.blocked_jobs > 0 && activity.active_jobs === 0) return "blocked"
-  if (activity.active_jobs > 0) return "working"
-  if (activity.has_waiting_work && activity.is_idle) return "blocked"
-  return "idle"
 }
 
 function stateLabel(state: PresenceState): string {
@@ -71,42 +62,49 @@ function stateRingClass(state: PresenceState): string {
   return "ring-zinc-700"
 }
 
-function buildPresenceMembers(
-  room: Room,
-  agentActivity: RuntimeAgentActivity[] = [],
-  agentStatus: RuntimeAgentStatus[] = [],
-): PresenceMember[] {
-  const activityByName = new Map(agentActivity.map((item) => [item.name, item]))
-  const statusByName = new Map(agentStatus.map((item) => [item.name, item]))
-
-  return (room.members || [])
+function buildPresenceMembers(room: Room, presence?: RoomPresence | null): PresenceMember[] {
+  const fallbackMembers = (room.members || [])
     .filter((member) => member.agent?.type !== "human")
+    .map((member) => ({
+      id: member.agent_id,
+      name: member.agent.name,
+      avatarUrl: member.agent.avatar_url,
+      state: "idle" as PresenceState,
+      subtitle: "sem leitura operacional ainda",
+      nextTask: null,
+      activeJobs: 0,
+      blockedJobs: 0,
+      idleMinutes: null,
+    }))
+
+  if (!presence?.members?.length) return fallbackMembers
+
+  return presence.members
     .map((member) => {
-      const activity = activityByName.get(member.agent.name)
-      const status = statusByName.get(member.agent.name)
-      const state = resolveState(activity)
-      const subtitle = activity
-        ? activity.blocked_jobs > 0 && activity.active_jobs === 0
-          ? `bloqueado • ${activity.blocked_jobs} frente(s)`
-          : activity.active_jobs > 0
-            ? `última evidência ${relativeTime(activity.last_evidence_at || activity.last_useful_at)}`
-            : status?.last_seen_at
-              ? `último heartbeat ${relativeTime(status.last_seen_at)}`
+      const state = (member.state === "working" || member.state === "blocked" ? member.state : "idle") as PresenceState
+      const subtitle =
+        state === "working"
+          ? member.last_signal_at
+            ? `evidência recente ${relativeTime(member.last_signal_at)}`
+            : "trabalhando na frente atual"
+          : state === "blocked"
+            ? member.current_cards?.some((card) => card.list_name === "Bloqueado")
+              ? "há frente bloqueada no board"
+              : "dependência ou falta de evidência"
+            : member.last_message_at
+              ? `último update ${relativeTime(member.last_message_at)}`
               : "sem atividade recente"
-        : status?.last_seen_at
-          ? `último heartbeat ${relativeTime(status.last_seen_at)}`
-          : "sem atividade recente"
 
       return {
         id: member.agent_id,
-        name: member.agent.name,
-        avatarUrl: member.agent.avatar_url,
+        name: member.name,
+        avatarUrl: member.avatar_url || undefined,
         state,
         subtitle,
-        nextTask: activity?.next_task || null,
-        activeJobs: activity?.active_jobs || 0,
-        blockedJobs: activity?.blocked_jobs || 0,
-        idleMinutes: activity?.idle_minutes ?? null,
+        nextTask: member.next_task || null,
+        activeJobs: member.active_jobs || 0,
+        blockedJobs: member.blocked_jobs || 0,
+        idleMinutes: member.idle_minutes ?? null,
       }
     })
     .sort((a, b) => {
@@ -119,10 +117,9 @@ export function TeamPresencePanel({
   room,
   loading,
   error,
-  agentActivity,
-  agentStatus,
+  presence,
 }: TeamPresencePanelProps) {
-  const members = buildPresenceMembers(room, agentActivity, agentStatus)
+  const members = buildPresenceMembers(room, presence)
   const workingCount = members.filter((member) => member.state === "working").length
   const blockedCount = members.filter((member) => member.state === "blocked").length
 

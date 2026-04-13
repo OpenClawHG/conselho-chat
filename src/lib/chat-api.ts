@@ -117,6 +117,38 @@ export interface Room {
   unread_count?: number
 }
 
+export interface RoomPresenceCard {
+  key?: string
+  name: string
+  owner?: string
+  list_name?: string | null
+  updated_at?: string | null
+}
+
+export interface RoomPresenceMember {
+  agent_id: string
+  name: string
+  type?: string | null
+  avatar_url?: string | null
+  state: 'working' | 'blocked' | 'idle' | string
+  current_cards: RoomPresenceCard[]
+  next_task?: string | null
+  active_jobs: number
+  blocked_jobs: number
+  last_signal_kind?: string | null
+  last_signal_at?: string | null
+  last_message_at?: string | null
+  idle_minutes?: number | null
+}
+
+export interface RoomPresence {
+  room_id: string
+  room_name: string
+  project_name?: string | null
+  board_name?: string | null
+  members: RoomPresenceMember[]
+}
+
 export interface RoomMember {
   agent_id: string
   role: 'admin' | 'member'
@@ -283,6 +315,9 @@ export const chatApi = {
     const data = await fetchAPI<unknown>(`/api/chat/rooms/${id}`)
     return normalizeRoom(data)
   },
+
+  getRoomPresence: (roomId: string) =>
+    fetchAPI<RoomPresence>(`/api/chat/rooms/${roomId}/presence`),
 
   createRoom: async (data: { name: string; description?: string; member_ids?: string[] }): Promise<Room> => {
     const raw = await fetchAPI<unknown>('/api/chat/rooms', {
