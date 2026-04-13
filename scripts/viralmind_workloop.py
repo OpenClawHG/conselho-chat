@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -46,6 +47,31 @@ IDLE_MINUTES = int(os.getenv("VIRALMIND_IDLE_MINUTES", "10"))
 REMINDER_COOLDOWN_MINUTES = int(os.getenv("VIRALMIND_REMINDER_COOLDOWN_MINUTES", "20"))
 STATE_FILE = Path("/root/.openclaw/workspace/runtime/viralmind_workloop_state.json")
 ACTIVE_LISTS = {"Priorizado", "Em Andamento"}
+EVIDENCE_PATTERNS = [
+    r"\bcommit\b",
+    r"\bhash\b",
+    r"\bpr\b",
+    r"\bteste\b",
+    r"\btestes\b",
+    r"\bsmoke test\b",
+    r"\bsmoke\b",
+    r"\bcurl\b",
+    r"\bendpoint\b",
+    r"\bstatus code\b",
+    r"\b200 ok\b",
+    r"\bapply_patch\b",
+    r"\bmigration\b",
+    r"\bsql\b",
+    r"\bsupabase\b",
+    r"\bbuild\b",
+    r"\bdeploy\b",
+    r"\bps\b",
+    r"\bservice\b",
+    r"\bresultado\b",
+    r"\bevid[eê]ncia\b",
+    r"\bgravei\b",
+    r"\bregistrei\b",
+]
 
 
 def _now() -> datetime:
@@ -149,6 +175,29 @@ def _latest_owner_card_update(owner: str, card_name: str) -> datetime | None:
     return row[0] if row else None
 
 
+def _latest_owner_card_evidence_update(owner: str, card_name: str) -> tuple[datetime | None, str | None]:
+    pattern_sql = " OR ".join(["m.content ~* %s" for _ in EVIDENCE_PATTERNS])
+    params: list[object] = [ROOM_ID, owner, f"%{card_name}%"]
+    params.extend(EVIDENCE_PATTERNS)
+    query = f"""
+        select m.created_at, left(replace(m.content, E'\\n', ' '), 280)
+        from chat_messages m
+        join chat_agents a on a.id = m.sender_id
+        where m.room_id = %s
+          and a.name = %s
+          and m.content ilike %s
+          and ({pattern_sql})
+        order by m.created_at desc
+        limit 1
+    """
+    with _connect_chat_db() as conn, conn.cursor() as cur:
+        cur.execute(query, params)
+        row = cur.fetchone()
+    if not row:
+        return None, None
+    return row[0], row[1]
+
+
 def _latest_room_activity_from(sender: str) -> datetime | None:
     with _connect_chat_db() as conn, conn.cursor() as cur:
         cur.execute(
@@ -208,14 +257,20 @@ def _record_reminder(card_key: str, now: datetime) -> None:
     _save_state(state)
 
 
-def _build_idle_reason(owner: str) -> str:
+def _build_idle_reason(owner: str, *, last_update: datetime | None, last_evidence: datetime | None) -> str:
     pending = _owner_has_pending_notifications(owner)
     if pending > 0:
         return f"{pending} notificações pendentes"
+    if last_update and not last_evidence:
+        idle_minutes = int((_now() - last_update).total_seconds() / 60)
+        return f"houve fala no canal, mas sem evidência verificável há ~{idle_minutes}min"
+    if last_evidence:
+        idle_minutes = int((_now() - last_evidence).total_seconds() / 60)
+        return f"sem evidência verificável no canal há ~{idle_minutes}min"
     latest = _latest_room_activity_from(owner)
     if latest:
         idle_minutes = int((_now() - latest).total_seconds() / 60)
-        return f"sem update útil recente no canal há ~{idle_minutes}min"
+        return f"sem update recente no canal há ~{idle_minutes}min"
     return "sem update útil registrado no canal"
 
 
@@ -228,15 +283,20 @@ def main() -> None:
     for card in active_cards:
         owner = card["owner"]
         last_update = _latest_owner_card_update(owner, card["name"])
-        idle = last_update is None or (now - last_update) >= timedelta(minutes=IDLE_MINUTES)
+        last_evidence, evidence_excerpt = _latest_owner_card_evidence_update(owner, card["name"])
+        idle = last_evidence is None or (now - last_evidence) >= timedelta(minutes=IDLE_MINUTES)
         if not idle:
             continue
-        if not _should_remind(card["key"], last_update, now):
+        freshness_marker = last_evidence or last_update
+        if not _should_remind(card["key"], freshness_marker, now):
             continue
-        reason = _build_idle_reason(owner)
+        reason = _build_idle_reason(owner, last_update=last_update, last_evidence=last_evidence)
+        guidance = "Responder agora com: `Card`, `Status`, `Evidência`, `Próximo passo`, `Bloqueio`."
+        if evidence_excerpt:
+            guidance += f" Última evidência vista: {evidence_excerpt}"
         lines.append(
             f"@{owner} card parado: `{card['name']}` | lista: `{card['list_name']}` | motivo observado: {reason}. "
-            "Responder agora com: estado atual, próximo passo e bloqueio real."
+            f"{guidance}"
         )
 
     if not lines:
