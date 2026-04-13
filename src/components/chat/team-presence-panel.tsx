@@ -2,7 +2,7 @@
 
 import { formatDistanceToNowStrict } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { Activity, AlertCircle, ArrowRight, Clock3, PauseCircle } from "lucide-react"
+import { Activity, AlertCircle, ArrowRight, Clock3, PauseCircle, PlayCircle } from "lucide-react"
 import { Avatar } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -16,7 +16,7 @@ interface TeamPresencePanelProps {
   presence?: RoomPresence | null
 }
 
-type PresenceState = "working" | "blocked" | "idle"
+type PresenceState = "working" | "blocked" | "ready" | "idle"
 
 interface PresenceMember {
   id: string
@@ -41,24 +41,28 @@ function relativeTime(dateStr?: string | null): string {
 function stateLabel(state: PresenceState): string {
   if (state === "working") return "working"
   if (state === "blocked") return "blocked"
+  if (state === "ready") return "ready"
   return "idle"
 }
 
 function stateBadgeClass(state: PresenceState): string {
   if (state === "working") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
   if (state === "blocked") return "border-amber-500/30 bg-amber-500/10 text-amber-200"
+  if (state === "ready") return "border-sky-500/30 bg-sky-500/10 text-sky-200"
   return "border-zinc-700 bg-zinc-800/80 text-zinc-300"
 }
 
 function stateDotClass(state: PresenceState): string {
   if (state === "working") return "bg-emerald-400"
   if (state === "blocked") return "bg-amber-400"
+  if (state === "ready") return "bg-sky-400"
   return "bg-zinc-500"
 }
 
 function stateRingClass(state: PresenceState): string {
   if (state === "working") return "ring-emerald-500/30"
   if (state === "blocked") return "ring-amber-500/30"
+  if (state === "ready") return "ring-sky-500/30"
   return "ring-zinc-700"
 }
 
@@ -81,16 +85,18 @@ function buildPresenceMembers(room: Room, presence?: RoomPresence | null): Prese
 
   return presence.members
     .map((member) => {
-      const state = (member.state === "working" || member.state === "blocked" ? member.state : "idle") as PresenceState
+      const normalizedState = (member.state === "working" || member.state === "blocked" || member.state === "ready" ? member.state : "idle") as PresenceState
       const subtitle =
-        state === "working"
+        normalizedState === "working"
           ? member.last_signal_at
             ? `evidência recente ${relativeTime(member.last_signal_at)}`
             : "trabalhando na frente atual"
-          : state === "blocked"
+          : normalizedState === "blocked"
             ? member.current_cards?.some((card) => card.list_name === "Bloqueado")
               ? "há frente bloqueada no board"
               : "dependência ou falta de evidência"
+            : normalizedState === "ready"
+              ? "há próxima frente pronta para execução"
             : member.last_message_at
               ? `último update ${relativeTime(member.last_message_at)}`
               : "sem atividade recente"
@@ -99,7 +105,7 @@ function buildPresenceMembers(room: Room, presence?: RoomPresence | null): Prese
         id: member.agent_id,
         name: member.name,
         avatarUrl: member.avatar_url || undefined,
-        state,
+        state: normalizedState,
         subtitle,
         nextTask: member.next_task || null,
         activeJobs: member.active_jobs || 0,
@@ -108,7 +114,7 @@ function buildPresenceMembers(room: Room, presence?: RoomPresence | null): Prese
       }
     })
     .sort((a, b) => {
-      const order: Record<PresenceState, number> = { working: 0, blocked: 1, idle: 2 }
+      const order: Record<PresenceState, number> = { working: 0, blocked: 1, ready: 2, idle: 3 }
       return order[a.state] - order[b.state] || a.name.localeCompare(b.name)
     })
 }
@@ -122,6 +128,7 @@ export function TeamPresencePanel({
   const members = buildPresenceMembers(room, presence)
   const workingCount = members.filter((member) => member.state === "working").length
   const blockedCount = members.filter((member) => member.state === "blocked").length
+  const readyCount = members.filter((member) => member.state === "ready").length
 
   if (loading) {
     return (
@@ -166,6 +173,10 @@ export function TeamPresencePanel({
             <p className="text-[10px] uppercase tracking-[0.18em] text-amber-300/80">Blocked</p>
             <p className="mt-1 text-base font-semibold text-amber-100">{blockedCount}</p>
           </div>
+          <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 px-3 py-2 col-span-2">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-sky-300/80">Ready</p>
+            <p className="mt-1 text-base font-semibold text-sky-100">{readyCount}</p>
+          </div>
         </div>
       </div>
 
@@ -189,6 +200,7 @@ export function TeamPresencePanel({
                   "rounded-3xl border bg-zinc-900/70 p-4 shadow-[0_10px_30px_rgba(0,0,0,0.18)] backdrop-blur-sm",
                   member.state === "working" && "border-emerald-500/20",
                   member.state === "blocked" && "border-amber-500/20",
+                  member.state === "ready" && "border-sky-500/20",
                   member.state === "idle" && "border-zinc-800",
                 )}
               >
@@ -236,6 +248,8 @@ export function TeamPresencePanel({
                             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
                           ) : member.state === "working" ? (
                             <Activity className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+                          ) : member.state === "ready" ? (
+                            <PlayCircle className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" />
                           ) : (
                             <PauseCircle className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />
                           )}
@@ -261,7 +275,7 @@ export function TeamPresencePanel({
         <div className="mt-4 rounded-3xl border border-zinc-800 bg-zinc-900/50 px-4 py-4 text-xs text-zinc-500">
           <div className="flex items-center gap-2 text-zinc-400">
             <ArrowRight className="h-3.5 w-3.5" />
-            <span>O status `working` aparece quando há job ativo ou evidência recente.</span>
+            <span>`ready` = próxima frente pronta. `working` = execução ativa. `blocked` = impedimento real no board.</span>
           </div>
         </div>
       </div>

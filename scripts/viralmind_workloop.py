@@ -45,8 +45,9 @@ API_BASE = os.getenv("CHAT_AGENT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
 CODEX_TOKEN = os.getenv("CODEX_AGENT_TOKEN", "").strip()
 IDLE_MINUTES = int(os.getenv("VIRALMIND_IDLE_MINUTES", "20"))
 REMINDER_COOLDOWN_MINUTES = int(os.getenv("VIRALMIND_REMINDER_COOLDOWN_MINUTES", "40"))
+FIRST_EVIDENCE_MINUTES = int(os.getenv("VIRALMIND_FIRST_EVIDENCE_MINUTES", "15"))
 STATE_FILE = Path("/root/.openclaw/workspace/runtime/viralmind_workloop_state.json")
-ACTIVE_LISTS = {"Priorizado", "Em Andamento"}
+TRACKED_LISTS = {"Bloqueado", "Em Andamento"}
 EVIDENCE_PATTERNS = [
     r"\bcommit\b",
     r"\bhash\b",
@@ -141,14 +142,65 @@ def _get_board_cards() -> list[dict]:
             continue
         rows.append(
             {
+                "id": match.get("id"),
                 "key": spec["key"],
                 "name": spec["name"],
                 "owner": spec["owner"],
                 "list_name": lists.get(match.get("listId")),
                 "artifact_paths": spec.get("artifact_paths") or [],
+                "position": match.get("position") or 65536,
+                "board_id": board["id"],
             }
         )
     return rows
+
+
+def _list_id_by_name(board_id: str, list_name: str) -> str:
+    client = get_planka_client()
+    payload = client.get_board(board_id)
+    included = payload.get("included") or {}
+    for item in included.get("lists") or []:
+        if item.get("type") == "active" and item.get("name") == list_name:
+            return item["id"]
+    raise RuntimeError(f"Lista {list_name} não encontrada no board {board_id}")
+
+
+def _move_card_to_list(card: dict, list_name: str) -> None:
+    client = get_planka_client()
+    list_id = _list_id_by_name(card["board_id"], list_name)
+    client.update_card(card["id"], listId=list_id, position=card.get("position") or 65536)
+
+
+def _artifact_guidance(card: dict) -> str:
+    artifact_paths = card.get("artifact_paths") or []
+    if not artifact_paths:
+        return "Entregue a primeira evidência verificável agora."
+    return (
+        "Primeira evidência esperada agora: commit compartilhado tocando "
+        + ", ".join(f"`{path}`" for path in artifact_paths)
+        + "."
+    )
+
+
+def _dispatch_ready_cards(cards: list[dict], now: datetime) -> list[str]:
+    dispatches: list[str] = []
+    owners = sorted({card["owner"] for card in cards})
+    for owner in owners:
+        owner_cards = [card for card in cards if card["owner"] == owner]
+        if any(card["list_name"] in {"Em Andamento", "Bloqueado"} for card in owner_cards):
+            continue
+        prioritized = [card for card in owner_cards if card["list_name"] == "Priorizado"]
+        if not prioritized:
+            continue
+        card = prioritized[0]
+        _move_card_to_list(card, "Em Andamento")
+        _record_reminder(card["key"], now)
+        dispatches.append(
+            f"@{owner} auto-dispatch: `{card['name']}` -> `Em Andamento`. "
+            f"Não use prazo humano largo. {_artifact_guidance(card)}"
+        )
+        card["list_name"] = "Em Andamento"
+    return dispatches
 
 
 def _connect_chat_db():
@@ -278,10 +330,11 @@ def _build_idle_reason(owner: str, *, last_update: datetime | None, last_evidenc
 def main() -> None:
     now = _now()
     cards = _get_board_cards()
-    active_cards = [card for card in cards if card.get("list_name") in ACTIVE_LISTS]
+    dispatch_lines = _dispatch_ready_cards(cards, now)
+    tracked_cards = [card for card in cards if card.get("list_name") in TRACKED_LISTS]
 
     lines: list[str] = []
-    for card in active_cards:
+    for card in tracked_cards:
         owner = card["owner"]
         last_update = _latest_owner_card_update(owner, card["name"])
         last_evidence, evidence_excerpt = _latest_owner_card_evidence_update(owner, card["name"])
@@ -292,7 +345,10 @@ def main() -> None:
         if not _should_remind(card["key"], freshness_marker, now):
             continue
         reason = _build_idle_reason(owner, last_update=last_update, last_evidence=last_evidence)
-        guidance = "Responder agora com: `Card`, `Status`, `Evidência`, `Próximo passo`, `Bloqueio`."
+        guidance = (
+            "Responder agora com: `Card`, `Status`, `Evidência`, `Próximo passo`, `Bloqueio`. "
+            f"Não use prazo humano largo; entregue a próxima evidência verificável em até {FIRST_EVIDENCE_MINUTES}min."
+        )
         artifact_paths = card.get("artifact_paths") or []
         if artifact_paths:
             guidance += " Evidência preferida: commit compartilhado tocando " + ", ".join(f"`{path}`" for path in artifact_paths) + "."
@@ -303,14 +359,19 @@ def main() -> None:
             f"{guidance}"
         )
 
-    if not lines:
+    if not lines and not dispatch_lines:
         print("ViralMind workloop OK: sem owners parados além do limite.")
         return
 
-    message = f"Workloop ViralMind ({IDLE_MINUTES}min):\n- " + "\n- ".join(lines)
+    sections: list[str] = []
+    if dispatch_lines:
+        sections.append("Dispatch:\n- " + "\n- ".join(dispatch_lines))
+    if lines:
+        sections.append(f"Workloop ViralMind ({IDLE_MINUTES}min):\n- " + "\n- ".join(lines))
+    message = "\n\n".join(sections)
     result = post_room_message(message)
     if result:
-        for card in active_cards:
+        for card in tracked_cards:
             owner_line = f"@{card['owner']} card parado: `{card['name']}`"
             if owner_line in message:
                 _record_reminder(card["key"], now)
