@@ -29,6 +29,7 @@ if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
 from services.planka_service import get_planka_client
+from services.viralmind_delivery_sync import load_delivery_state
 from services.viralmind_planka import (
     VIRALMIND_BOARD_NAME,
     VIRALMIND_CANONICAL_CARDS,
@@ -89,6 +90,19 @@ def _load_state() -> dict:
 def _save_state(payload: dict) -> None:
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _parse_iso_like(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _delivery_entry(card_key: str) -> dict:
+    return ((load_delivery_state().get("cards") or {}).get(card_key) or {})
 
 
 def _api_post(url: str, token: str, data: dict) -> dict | None:
@@ -184,6 +198,7 @@ def _artifact_guidance(card: dict) -> str:
 
 def _dispatch_ready_cards(cards: list[dict], now: datetime) -> list[str]:
     dispatches: list[str] = []
+    state = _load_state()
     owners = sorted({card["owner"] for card in cards})
     for owner in owners:
         owner_cards = [card for card in cards if card["owner"] == owner]
@@ -195,11 +210,15 @@ def _dispatch_ready_cards(cards: list[dict], now: datetime) -> list[str]:
         card = prioritized[0]
         _move_card_to_list(card, "Em Andamento")
         _record_reminder(card["key"], now)
+        card_state = state.setdefault("cards", {}).setdefault(card["key"], {})
+        card_state["dispatch_at"] = now.replace(microsecond=0).isoformat().replace("+00:00", "Z")
         dispatches.append(
             f"@{owner} auto-dispatch: `{card['name']}` -> `Em Andamento`. "
             f"Não use prazo humano largo. {_artifact_guidance(card)}"
         )
         card["list_name"] = "Em Andamento"
+    if dispatches:
+        _save_state(state)
     return dispatches
 
 
@@ -338,13 +357,35 @@ def main() -> None:
         owner = card["owner"]
         last_update = _latest_owner_card_update(owner, card["name"])
         last_evidence, evidence_excerpt = _latest_owner_card_evidence_update(owner, card["name"])
-        idle = last_evidence is None or (now - last_evidence) >= timedelta(minutes=IDLE_MINUTES)
+        delivery = _delivery_entry(card["key"])
+        delivery_state = (delivery.get("state") or "").strip()
+        verified_at = _parse_iso_like(delivery.get("verified_at") or delivery.get("claim_created_at"))
+        workloop_state = (_load_state().get("cards") or {}).get(card["key"], {})
+        dispatch_at = _parse_iso_like(workloop_state.get("dispatch_at"))
+
+        missing_first_evidence = (
+            card.get("list_name") == "Em Andamento"
+            and delivery_state not in {"verified_progress", "verified_done"}
+            and dispatch_at is not None
+            and (now - dispatch_at) >= timedelta(minutes=FIRST_EVIDENCE_MINUTES)
+        )
+        stale_verified_evidence = (
+            verified_at is not None
+            and card.get("list_name") == "Em Andamento"
+            and (now - verified_at) >= timedelta(minutes=IDLE_MINUTES)
+        )
+        idle = missing_first_evidence or stale_verified_evidence or (last_evidence is None or (now - last_evidence) >= timedelta(minutes=IDLE_MINUTES))
         if not idle:
             continue
         freshness_marker = last_evidence or last_update
         if not _should_remind(card["key"], freshness_marker, now):
             continue
-        reason = _build_idle_reason(owner, last_update=last_update, last_evidence=last_evidence)
+        if missing_first_evidence:
+            reason = f"card em andamento sem primeira evidência verificável há ~{FIRST_EVIDENCE_MINUTES}+min desde o dispatch"
+        elif stale_verified_evidence:
+            reason = f"última evidência verificável há ~{int((now - verified_at).total_seconds() / 60)}min"
+        else:
+            reason = _build_idle_reason(owner, last_update=last_update, last_evidence=last_evidence)
         guidance = (
             "Responder agora com: `Card`, `Status`, `Evidência`, `Próximo passo`, `Bloqueio`. "
             f"Não use prazo humano largo; entregue a próxima evidência verificável em até {FIRST_EVIDENCE_MINUTES}min."

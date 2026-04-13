@@ -136,6 +136,9 @@ export interface RoomPresenceMember {
   active_jobs: number
   blocked_jobs: number
   ready_jobs: number
+  evidence_state?: 'verified' | 'missing' | 'stale' | 'none' | string
+  evidence_at?: string | null
+  evidence_commit?: string | null
   last_signal_kind?: string | null
   last_signal_at?: string | null
   last_message_at?: string | null

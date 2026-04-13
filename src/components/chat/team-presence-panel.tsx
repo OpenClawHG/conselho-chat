@@ -24,6 +24,7 @@ interface PresenceMember {
   avatarUrl?: string
   state: PresenceState
   subtitle: string
+  evidenceLabel?: string | null
   nextTask?: string | null
   activeJobs: number
   blockedJobs: number
@@ -88,8 +89,14 @@ function buildPresenceMembers(room: Room, presence?: RoomPresence | null): Prese
       const normalizedState = (member.state === "working" || member.state === "blocked" || member.state === "ready" ? member.state : "idle") as PresenceState
       const subtitle =
         normalizedState === "working"
-          ? member.last_signal_at
-            ? `evidência recente ${relativeTime(member.last_signal_at)}`
+          ? member.evidence_state === "verified"
+            ? `progresso verificado ${relativeTime(member.evidence_at || member.last_signal_at)}`
+            : member.evidence_state === "stale"
+              ? `última evidência verificada ${relativeTime(member.evidence_at || member.last_signal_at)}`
+              : member.evidence_state === "missing"
+                ? "working sem evidência verificável ainda"
+            : member.last_signal_at
+              ? `evidência recente ${relativeTime(member.last_signal_at)}`
             : "trabalhando na frente atual"
           : normalizedState === "blocked"
             ? member.current_cards?.some((card) => card.list_name === "Bloqueado")
@@ -107,6 +114,14 @@ function buildPresenceMembers(room: Room, presence?: RoomPresence | null): Prese
         avatarUrl: member.avatar_url || undefined,
         state: normalizedState,
         subtitle,
+        evidenceLabel:
+          member.evidence_state === "verified"
+            ? (member.evidence_commit ? `commit ${member.evidence_commit.slice(0, 7)}` : "evidência verificada")
+            : member.evidence_state === "stale"
+              ? "evidência stale"
+              : member.evidence_state === "missing"
+                ? "sem evidência"
+                : null,
         nextTask: member.next_task || null,
         activeJobs: member.active_jobs || 0,
         blockedJobs: member.blocked_jobs || 0,
@@ -218,6 +233,20 @@ export function TeamPresencePanel({
                         <div className="flex items-center gap-2">
                           <span className={cn("h-2.5 w-2.5 rounded-full", stateDotClass(member.state))} />
                           <p className="truncate text-sm font-semibold text-zinc-100">{member.name}</p>
+                          {member.evidenceLabel ? (
+                            <span
+                              className={cn(
+                                "truncate rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.14em]",
+                                member.evidenceLabel === "sem evidência"
+                                  ? "border-amber-500/20 bg-amber-500/10 text-amber-200"
+                                  : member.evidenceLabel === "evidência stale"
+                                    ? "border-orange-500/20 bg-orange-500/10 text-orange-200"
+                                    : "border-emerald-500/20 bg-emerald-500/10 text-emerald-200"
+                              )}
+                            >
+                              {member.evidenceLabel}
+                            </span>
+                          ) : null}
                         </div>
                         <p className="mt-1 text-xs text-zinc-500">{member.subtitle}</p>
                       </div>
