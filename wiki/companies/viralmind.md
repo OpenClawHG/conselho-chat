@@ -89,5 +89,11 @@ Transformar inteligencia em execucao:
 - Conselho so recebe report, excecao e decisao de holding
 - Edwin e o responsavel por reportar para o Conselho
 
+## Sala atual
+Por enquanto a operacao da empresa foi simplificada para uma sala unica:
+- `ViralMind / geral`
+
+As salas antigas da empresa foram arquivadas para evitar fragmentacao precoce.
+
 ## Documento detalhado
 - [viralmind-product-roadmap-2026-04-13.md](/opt/viralmind/docs/viralmind-product-roadmap-2026-04-13.md)
