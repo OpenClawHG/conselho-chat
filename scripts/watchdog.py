@@ -37,6 +37,8 @@ from services.operational_jobs import (
 )
 from services.backlog_orchestrator import (
     activate_next_backlog_items,
+    DEFAULT_OWNER_ORDER,
+    list_backlog_items,
     list_overdue_activated_items,
     list_actionable_backlog_items,
     reactivate_overdue_backlog_items,
@@ -98,10 +100,25 @@ def _save_watchdog_state(payload: dict) -> None:
     WATCHDOG_STATE_FILE.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def _build_owner_action_lines(limit_per_owner: int = 2) -> list[str]:
+def _build_owner_action_lines(
+    *,
+    active_jobs: list[dict] | None = None,
+    allowed_owners: set[str] | None = None,
+    limit_per_owner: int = 2,
+) -> list[str]:
     grouped = list_actionable_backlog_items(limit_per_owner=limit_per_owner)
+    active_by_owner: dict[str, int] = {}
+    for job in active_jobs or []:
+        owner = (job.get("owner") or "").strip()
+        if not owner:
+            continue
+        active_by_owner[owner] = active_by_owner.get(owner, 0) + 1
     lines: list[str] = []
     for owner in ("Claude Code", "Meyer Lansky"):
+        if allowed_owners is not None and owner not in allowed_owners:
+            continue
+        if active_by_owner.get(owner, 0) > 0:
+            continue
         items = grouped.get(owner) or []
         if not items:
             continue
@@ -114,6 +131,15 @@ def _build_owner_action_lines(limit_per_owner: int = 2) -> list[str]:
     return lines
 
 
+def _allowed_owners_for_workloop(runtime: dict, stale_jobs: list[dict]) -> set[str]:
+    blocked = set(runtime.get("stale_agents") or [])
+    for job in stale_jobs:
+        owner = (job.get("owner") or "").strip()
+        if owner:
+            blocked.add(owner)
+    return {owner for owner in DEFAULT_OWNER_ORDER if owner not in blocked}
+
+
 def _owner_action_digest(lines: list[str]) -> str:
     return sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
@@ -121,7 +147,6 @@ def _owner_action_digest(lines: list[str]) -> str:
 def _should_post_owner_charge(
     owner_action_lines: list[str],
     *,
-    active_jobs: list[dict],
     stale_jobs: list[dict],
     runtime_alerts: list[str],
     activated_items: list[dict],
@@ -133,8 +158,6 @@ def _should_post_owner_charge(
         return False
     if runtime_alerts or stale_jobs or activated_items or reactivated_items or overdue_backlog:
         return True
-    if active_jobs:
-        return False
 
     state = _load_watchdog_state()
     current_digest = _owner_action_digest(owner_action_lines)
@@ -188,6 +211,7 @@ def main() -> None:
             reason="gateway saudável",
             state="done",
             details=[f"generated_at={runtime.get('generated_at')}"],
+            create_if_missing=False,
         )
 
     if runtime.get("queue_alert"):
@@ -207,6 +231,7 @@ def main() -> None:
             reason="fila saudável",
             state="done",
             details=[f"threshold={os.getenv('CONSELHO_QUEUE_ALERT_THRESHOLD', '5')}"],
+            create_if_missing=False,
         )
 
     for agent_name in runtime.get("stale_agents") or []:
@@ -243,9 +268,11 @@ def main() -> None:
             reason="cron saudável",
             state="done",
             details=["status=ok"],
+            create_if_missing=False,
         )
 
     overdue_backlog = list_overdue_activated_items()
+    overdue_ids = {item["id"] for item in overdue_backlog}
     for item in overdue_backlog:
         reason = f"backlog ativado sem fechamento há mais de {os.getenv('CONSELHO_BACKLOG_STALE_MINUTES', '20')} min"
         runtime_alerts.append(f"Backlog sem resposta: {item.get('title')} ({item.get('owner')})")
@@ -256,27 +283,41 @@ def main() -> None:
             state="running",
             details=[f"owner={item.get('owner')}", f"activated_at={item.get('activated_at')}"],
         )
+    for item in list_backlog_items():
+        if item.get("id") in overdue_ids:
+            continue
+        sync_generic_incident(
+            incident_key=f"backlog-{item['id']}",
+            title=f"Backlog sem resposta - {item.get('title')}",
+            reason="backlog reconciliado",
+            state="done",
+            details=[f"owner={item.get('owner')}", f"status={item.get('status')}"],
+            create_if_missing=False,
+        )
+
+    allowed_owners = _allowed_owners_for_workloop(runtime, stale_jobs)
 
     reactivated_items = []
-    if not stale_jobs and runtime.get("gateway_ok"):
+    if allowed_owners and runtime.get("gateway_ok"):
         reactivated_items = reactivate_overdue_backlog_items(
             room_id=ROOM_ID,
             post_message=post_room_message,
             per_owner_limit=1,
+            allowed_owners=allowed_owners,
         )
 
     activated_items = []
-    if not stale_jobs and runtime.get("gateway_ok"):
+    if allowed_owners and runtime.get("gateway_ok"):
         activated_items = activate_next_backlog_items(
             room_id=ROOM_ID,
             post_message=post_room_message,
             per_owner_limit=1,
+            allowed_owners=allowed_owners,
         )
 
-    owner_action_lines = _build_owner_action_lines()
+    owner_action_lines = _build_owner_action_lines(active_jobs=active_jobs, allowed_owners=allowed_owners)
     should_post_owner_charge = _should_post_owner_charge(
         owner_action_lines,
-        active_jobs=active_jobs,
         stale_jobs=stale_jobs,
         runtime_alerts=runtime_alerts,
         activated_items=activated_items,

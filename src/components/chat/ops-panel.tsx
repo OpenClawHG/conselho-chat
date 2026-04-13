@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import type { OperationalJob, OperationalRuntime } from "@/lib/chat-api"
+import type { OperationalJob, OperationalRuntime, RuntimeAgentActivity } from "@/lib/chat-api"
 
 const BOARD_URL = "https://board.openclawhg.tech"
 
@@ -41,6 +41,14 @@ function statusLabel(status: OperationalJob["status"]): string {
 function relativeTime(dateStr?: string | null): string {
   if (!dateStr) return "sem heartbeat"
   return formatDistanceToNowStrict(new Date(dateStr), { addSuffix: true, locale: ptBR })
+}
+
+function activityLabel(activity?: RuntimeAgentActivity): string {
+  if (!activity) return "sem atividade"
+  if (activity.active_jobs > 0) return "executando"
+  if (activity.is_idle && activity.has_waiting_work) return "parado com trabalho"
+  if (activity.has_waiting_work) return "aguardando acionamento"
+  return "sem fila atribuída"
 }
 
 export function OpsPanel({ jobs, runtime, loading, error, onRefresh, roomName }: OpsPanelProps) {
@@ -130,6 +138,36 @@ export function OpsPanel({ jobs, runtime, loading, error, onRefresh, roomName }:
             </div>
           </div>
 
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="rounded-xl bg-zinc-950/70 p-3">
+              <div className="flex items-center gap-2 text-zinc-400">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span className="text-[11px] uppercase tracking-wide">Backlog</span>
+              </div>
+              <p className="mt-1 text-sm font-medium text-zinc-100">
+                {runtime?.backlog_overview?.total_items ?? 0} frentes
+              </p>
+            </div>
+            <div className="rounded-xl bg-zinc-950/70 p-3">
+              <div className="flex items-center gap-2 text-zinc-400">
+                <Clock3 className="h-3.5 w-3.5" />
+                <span className="text-[11px] uppercase tracking-wide">Ociosos</span>
+              </div>
+              <p className={cn("mt-1 text-sm font-medium", (runtime?.idle_agents?.length || 0) > 0 ? "text-amber-300" : "text-zinc-100")}>
+                {runtime?.idle_agents?.length ?? 0} agente(s)
+              </p>
+            </div>
+            <div className="rounded-xl bg-zinc-950/70 p-3">
+              <div className="flex items-center gap-2 text-zinc-400">
+                <Activity className="h-3.5 w-3.5" />
+                <span className="text-[11px] uppercase tracking-wide">Running</span>
+              </div>
+              <p className="mt-1 text-sm font-medium text-zinc-100">
+                {runtime?.jobs_overview?.counts?.running || 0} job(s)
+              </p>
+            </div>
+          </div>
+
           <div className="mt-3 space-y-2">
             {(runtime?.agents || []).map((agent) => (
               <div key={agent.id} className="flex items-center justify-between rounded-xl bg-zinc-950/70 px-3 py-2">
@@ -162,6 +200,65 @@ export function OpsPanel({ jobs, runtime, loading, error, onRefresh, roomName }:
               </div>
             </div>
           )}
+        </section>
+
+        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-fuchsia-400" />
+              <span className="text-sm font-medium text-zinc-100">Atividade real dos agentes</span>
+            </div>
+            <Badge variant="outline">{runtime?.agent_activity?.length || 0} monitorados</Badge>
+          </div>
+
+          <div className="space-y-3">
+            {(runtime?.agent_activity || []).map((activity) => (
+              <div key={activity.agent_id} className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-zinc-100">{activity.name}</p>
+                    <p className="mt-0.5 text-[11px] text-zinc-500">
+                      {activityLabel(activity)} • última evidência {relativeTime(activity.last_evidence_at || activity.last_useful_at)}
+                    </p>
+                  </div>
+                  <Badge variant={activity.is_idle && activity.has_waiting_work ? "destructive" : "secondary"}>
+                    {activity.is_idle && activity.has_waiting_work ? "parado" : "ativo"}
+                  </Badge>
+                </div>
+
+                <div className="mt-3 grid grid-cols-4 gap-2 text-center">
+                  <div className="rounded-xl bg-zinc-900/80 p-2">
+                    <p className="text-[10px] uppercase tracking-wide text-zinc-500">ativos</p>
+                    <p className="mt-1 text-sm font-semibold text-zinc-100">{activity.active_jobs}</p>
+                  </div>
+                  <div className="rounded-xl bg-zinc-900/80 p-2">
+                    <p className="text-[10px] uppercase tracking-wide text-zinc-500">bloq.</p>
+                    <p className="mt-1 text-sm font-semibold text-zinc-100">{activity.blocked_jobs}</p>
+                  </div>
+                  <div className="rounded-xl bg-zinc-900/80 p-2">
+                    <p className="text-[10px] uppercase tracking-wide text-zinc-500">done</p>
+                    <p className="mt-1 text-sm font-semibold text-zinc-100">{activity.done_jobs}</p>
+                  </div>
+                  <div className="rounded-xl bg-zinc-900/80 p-2">
+                    <p className="text-[10px] uppercase tracking-wide text-zinc-500">idle</p>
+                    <p className="mt-1 text-sm font-semibold text-zinc-100">{activity.idle_minutes ?? 0}m</p>
+                  </div>
+                </div>
+
+                <div className="mt-3 space-y-1 text-sm text-zinc-300">
+                  <p>
+                    <span className="text-zinc-500">Último job:</span> {activity.latest_job_title || "nenhum"}
+                  </p>
+                  <p>
+                    <span className="text-zinc-500">Próxima frente:</span> {activity.next_task || "nenhuma"}
+                  </p>
+                  <p>
+                    <span className="text-zinc-500">Backlog:</span> pending={activity.backlog_counts?.pending || 0} • activated={activity.backlog_counts?.activated || 0} • blocked={activity.backlog_counts?.blocked || 0}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
         </section>
 
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
