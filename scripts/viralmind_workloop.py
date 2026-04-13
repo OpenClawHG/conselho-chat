@@ -307,7 +307,7 @@ def main() -> None:
         print("ViralMind workloop OK: sem owners parados além do limite.")
         return
 
-    message = "Workloop ViralMind (10min):\n- " + "\n- ".join(lines)
+    message = f"Workloop ViralMind ({IDLE_MINUTES}min):\n- " + "\n- ".join(lines)
     result = post_room_message(message)
     if result:
         for card in active_cards:
