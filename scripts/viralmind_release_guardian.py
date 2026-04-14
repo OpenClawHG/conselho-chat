@@ -171,6 +171,16 @@ def _service_started_at(service: str) -> datetime | None:
         return None
 
 
+def _head_commit_at(repo: Path) -> datetime | None:
+    commit_date = _git(repo, "show", "-s", "--format=%cI", "HEAD").stdout.strip()
+    if not commit_date:
+        return None
+    try:
+        return datetime.fromisoformat(commit_date.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
 def _service_active(service: str) -> bool:
     result = _run("systemctl", "is-active", service)
     return result.returncode == 0 and result.stdout.strip() == "active"
@@ -209,8 +219,7 @@ def _target_status(target: Target) -> dict[str, Any]:
         if "__pycache__" not in line and not line.endswith(".pyc")
     ]
     dirty = bool(relevant_status)
-    commit_date = _git(target.repo_path, "show", "-s", "--format=%cI", "HEAD").stdout.strip()
-    commit_at = datetime.fromisoformat(commit_date.replace("Z", "+00:00")) if commit_date else None
+    commit_at = _head_commit_at(target.repo_path)
     started_at = _service_started_at(target.service)
     active = _service_active(target.service)
     pending_deploy = bool(
@@ -247,6 +256,7 @@ def _deploy_target(status: dict[str, Any]) -> dict[str, Any]:
 
     changed_paths = _head_changed_paths(repo)
     old_local = status["local"]
+    pulled_runtime_change = False
 
     if status["local"] != status["remote"]:
         pull = _git(repo, "pull", "--ff-only", "origin", target.branch)
@@ -261,9 +271,22 @@ def _deploy_target(status: dict[str, Any]) -> dict[str, Any]:
         if new_local != old_local:
             actions.append(f"pull {target.branch}")
         changed_paths = _changed_paths_between(repo, old_local, new_local) or _head_changed_paths(repo)
-        status["runtime_changed"] = _head_has_runtime_changes(target, changed_paths)
+        pulled_runtime_change = _head_has_runtime_changes(target, changed_paths)
+        status["runtime_changed"] = pulled_runtime_change
 
-    if status["runtime_changed"] and target.name in {"frontend", "chat"}:
+    current_active = _service_active(target.service)
+    current_started_at = _service_started_at(target.service)
+    current_commit_at = _head_commit_at(repo)
+    current_head_runtime_change = _head_has_runtime_changes(target, _head_changed_paths(repo))
+    stale_runtime = bool(
+        current_head_runtime_change
+        and current_commit_at
+        and current_started_at
+        and current_started_at < current_commit_at
+    )
+    deploy_needed = (not current_active) or pulled_runtime_change or stale_runtime
+
+    if deploy_needed and current_head_runtime_change and target.name in {"frontend", "chat"}:
         build = _build_target(target, changed_paths)
         if build is not None and build.returncode != 0:
             return {
@@ -274,7 +297,7 @@ def _deploy_target(status: dict[str, Any]) -> dict[str, Any]:
             }
         actions.append("build")
 
-    if (not status["active"]) or status["runtime_changed"]:
+    if deploy_needed:
         restart = _run("systemctl", "restart", *target.restart_services)
         if restart.returncode != 0:
             return {
