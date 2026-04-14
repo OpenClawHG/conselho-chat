@@ -50,6 +50,7 @@ REMINDER_COOLDOWN_MINUTES = int(os.getenv("VIRALMIND_REMINDER_COOLDOWN_MINUTES",
 FIRST_EVIDENCE_MINUTES = int(os.getenv("VIRALMIND_FIRST_EVIDENCE_MINUTES", "15"))
 STATE_FILE = Path("/root/.openclaw/workspace/runtime/viralmind_workloop_state.json")
 TRACKED_LISTS = {"Bloqueado", "Em Andamento"}
+DRAFT_OWNER_RE = re.compile(r"<!--\s*draft-owner:([A-Za-z][A-Za-z ]*[A-Za-z]|[A-Za-z])\s*-->")
 EVIDENCE_PATTERNS = [
     r"\bcommit\b",
     r"\bhash\b",
@@ -150,6 +151,7 @@ def _get_board_cards() -> list[dict]:
     }
     cards = included.get("cards") or []
     rows: list[dict] = []
+    seen_dynamic: set[tuple[str, str]] = set()
     for spec in VIRALMIND_CANONICAL_CARDS:
         marker = f"<!-- viralmind-card:{spec['key']} -->"
         match = next((card for card in cards if marker in (card.get("description") or "")), None)
@@ -166,6 +168,35 @@ def _get_board_cards() -> list[dict]:
                 "canonical_list_name": spec.get("list_name"),
                 "position": match.get("position") or 65536,
                 "board_id": board["id"],
+            }
+        )
+    for card in cards:
+        description = card.get("description") or ""
+        owner_match = DRAFT_OWNER_RE.search(description)
+        if not owner_match:
+            continue
+        list_name = lists.get(card.get("listId"))
+        if list_name not in {"Inbox", "Priorizado", "Em Andamento", "Bloqueado"}:
+            continue
+        owner = owner_match.group(1).strip()
+        artifact_match = re.search(r"\*\*Artifact:\*\*\s*`([^`]+)`", description)
+        artifact_path = artifact_match.group(1).strip() if artifact_match else ""
+        dedupe_key = (owner, artifact_path or (card.get("name") or "").strip().lower())
+        if dedupe_key in seen_dynamic:
+            continue
+        seen_dynamic.add(dedupe_key)
+        rows.append(
+            {
+                "id": card.get("id"),
+                "key": f"draft-{card.get('id')}",
+                "name": card.get("name"),
+                "owner": owner,
+                "list_name": list_name,
+                "artifact_paths": [artifact_path] if artifact_path else [],
+                "canonical_list_name": list_name,
+                "position": card.get("position") or 65536,
+                "board_id": board["id"],
+                "dynamic": True,
             }
         )
     return rows
