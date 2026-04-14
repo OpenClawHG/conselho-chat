@@ -324,9 +324,25 @@ def _should_remind(card_key: str, last_update: datetime | None, now: datetime) -
 def _record_reminder(card_key: str, now: datetime) -> None:
     state = _load_state()
     reminders = state.setdefault("reminders", {})
+    previous_count = int((reminders.get(card_key) or {}).get("count") or 0)
     reminders[card_key] = {
-        "last_reminder_at": now.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        "last_reminder_at": now.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "count": previous_count + 1,
     }
+    _save_state(state)
+
+
+def _reminder_count(card_key: str) -> int:
+    state = _load_state()
+    reminder = (state.get("reminders") or {}).get(card_key) or {}
+    return int(reminder.get("count") or 0)
+
+
+def _reset_reminder(card_key: str) -> None:
+    state = _load_state()
+    reminders = state.setdefault("reminders", {})
+    if card_key in reminders:
+        reminders[card_key]["count"] = 0
     _save_state(state)
 
 
@@ -358,6 +374,7 @@ def main() -> None:
     ]
 
     lines_by_owner: dict[str, list[str]] = {}
+    queue_health_lines: list[str] = []
     for card in tracked_cards:
         owner = card["owner"]
         last_update = _latest_owner_card_update(owner, card["name"])
@@ -408,6 +425,12 @@ def main() -> None:
             guidance += " Evidência preferida: commit compartilhado tocando " + ", ".join(f"`{path}`" for path in artifact_paths) + "."
         if evidence_excerpt:
             guidance += f" Última evidência vista: {evidence_excerpt}"
+        reminder_count = _reminder_count(card["key"])
+        if reminder_count >= 2 and owner != "Codex":
+            queue_health_lines.append(
+                f"- `{card['name']}` está sem tração real depois de {reminder_count} cobranças; abrir/usar unblock e reatribuir se necessário."
+            )
+            guidance += " Escalada: @Codex assume unblock e @Edwin precisa decidir se quebra ou reatribui esse card."
         lines_by_owner.setdefault(owner, []).append(
             f"@{owner} card parado: `{card['name']}` | lista: `{card['list_name']}` | motivo observado: {reason}. "
             f"{guidance}"
@@ -443,6 +466,27 @@ def main() -> None:
                 owner_line = f"@{card['owner']} card parado: `{card['name']}`"
                 if owner_line in message:
                     _record_reminder(card["key"], now)
+                elif card["owner"] == owner and any(dispatch in message for dispatch in owner_dispatches):
+                    _reset_reminder(card["key"])
+    idle_owners = []
+    active_owners = {card["owner"] for card in cards if card.get("list_name") in {"Priorizado", "Em Andamento", "Bloqueado"}}
+    for owner in sorted({card["owner"] for card in cards}):
+        if owner not in active_owners:
+            idle_owners.append(owner)
+    if idle_owners or queue_health_lines:
+        health_lines = []
+        if idle_owners:
+            health_lines.append(
+                "- Owners sem frente ativa/ready: " + ", ".join(f"`{owner}`" for owner in idle_owners) + "."
+            )
+        health_lines.extend(queue_health_lines)
+        result = post_room_message(
+            "@Edwin saude da fila:\n"
+            + "\n".join(health_lines)
+            + "\n\nAcao esperada: manter builders principais em `working` ou `ready`, e converter travas recorrentes em unblock card."
+        )
+        if result:
+            posted_any = True
     if posted_any:
         print("Cobrança enviada.")
         return
