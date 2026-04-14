@@ -56,7 +56,7 @@ TARGETS = [
         branch="main",
         service="viralmind-web.service",
         restart_services=["viralmind-web.service"],
-        smoke_url="http://127.0.0.1:3002/",
+        smoke_url="http://127.0.0.1:3002/login",
         smoke_expect="html",
     ),
     Target(
@@ -155,7 +155,13 @@ def _target_status(target: Target) -> dict[str, Any]:
     _git(target.repo_path, "fetch", "origin", "--prune")
     local = _git(target.repo_path, "rev-parse", "--short", "HEAD").stdout.strip()
     remote = _git(target.repo_path, "rev-parse", "--short", f"origin/{target.branch}").stdout.strip()
-    dirty = bool(_git(target.repo_path, "status", "--short").stdout.strip())
+    raw_status = _git(target.repo_path, "status", "--short").stdout.splitlines()
+    relevant_status = [
+        line
+        for line in raw_status
+        if "__pycache__" not in line and not line.endswith(".pyc")
+    ]
+    dirty = bool(relevant_status)
     commit_date = _git(target.repo_path, "show", "-s", "--format=%cI", "HEAD").stdout.strip()
     commit_at = datetime.fromisoformat(commit_date.replace("Z", "+00:00")) if commit_date else None
     started_at = _service_started_at(target.service)
