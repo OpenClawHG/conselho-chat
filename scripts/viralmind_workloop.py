@@ -437,12 +437,16 @@ def main() -> None:
             and dispatch_at is not None
             and (now - dispatch_at) < timedelta(minutes=FIRST_EVIDENCE_MINUTES)
         )
+        recent_working_update = (
+            last_update is not None
+            and (now - last_update) < timedelta(minutes=FIRST_EVIDENCE_MINUTES)
+        )
         stale_verified_evidence = (
             (verified_at is not None or last_evidence is not None)
             and card.get("list_name") == "Em Andamento"
             and (now - max(filter(None, [verified_at, last_evidence]))) >= timedelta(minutes=IDLE_MINUTES)
         )
-        if within_initial_evidence_window:
+        if within_initial_evidence_window or recent_working_update:
             continue
         idle = missing_first_evidence or stale_verified_evidence or (last_evidence is None or (now - last_evidence) >= timedelta(minutes=IDLE_MINUTES))
         if not idle:
