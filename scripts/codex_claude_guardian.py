@@ -80,23 +80,20 @@ def _fetch_pending_and_room() -> tuple[list[dict[str, Any]], list[dict[str, Any]
 
 def _room_has_unanswered_claude(messages: list[dict[str, Any]]) -> tuple[bool, str | None, float]:
     ordered = sorted(messages, key=lambda msg: (_parse_when(msg.get("created_at") or "") or datetime.min.replace(tzinfo=timezone.utc)))
+    latest_claude_index: int | None = None
     latest_claude: dict[str, Any] | None = None
-    latest_codex_after: dict[str, Any] | None = None
-    for msg in reversed(ordered):
+    for idx, msg in enumerate(ordered):
         sender = ((msg.get("sender") or {}).get("name") or msg.get("sender_name") or "").strip()
-        if not latest_claude and sender == "Claude Code":
+        if sender == "Claude Code":
+            latest_claude_index = idx
             latest_claude = msg
-            continue
-        if latest_claude and sender == "Codex":
-            latest_codex_after = msg
-            break
     if not latest_claude:
         return False, None, 0.0
-    if latest_codex_after:
-        claude_at = _parse_when(latest_claude.get("created_at") or "")
-        codex_at = _parse_when(latest_codex_after.get("created_at") or "")
-        if claude_at and codex_at and codex_at >= claude_at:
-            return False, latest_claude.get("id"), 0.0
+    if latest_claude_index is not None:
+        for msg in ordered[latest_claude_index + 1 :]:
+            sender = ((msg.get("sender") or {}).get("name") or msg.get("sender_name") or "").strip()
+            if sender == "Codex":
+                return False, latest_claude.get("id"), 0.0
     created_at = _parse_when(latest_claude.get("created_at") or "")
     age = (datetime.now(timezone.utc) - created_at).total_seconds() if created_at else 0.0
     return age >= STALE_SECONDS, latest_claude.get("id"), age
