@@ -44,6 +44,7 @@ ROOM_ID = os.getenv("VIRALMIND_ROOM_ID", "c091861b-161e-415a-bd79-1b4d559c844b")
 CHAT_DB = os.getenv("CHAT_DATABASE_URL", "").strip()
 API_BASE = os.getenv("CHAT_AGENT_API_BASE", "http://127.0.0.1:8000").rstrip("/") + "/api/chat"
 CODEX_TOKEN = os.getenv("CODEX_AGENT_TOKEN", "").strip()
+INTERNAL_OWNERS = {"Codex"}
 IDLE_MINUTES = int(os.getenv("VIRALMIND_IDLE_MINUTES", "20"))
 REMINDER_COOLDOWN_MINUTES = int(os.getenv("VIRALMIND_REMINDER_COOLDOWN_MINUTES", "40"))
 FIRST_EVIDENCE_MINUTES = int(os.getenv("VIRALMIND_FIRST_EVIDENCE_MINUTES", "15"))
@@ -213,10 +214,11 @@ def _dispatch_ready_cards(cards: list[dict], now: datetime) -> list[str]:
         _record_reminder(card["key"], now)
         card_state = state.setdefault("cards", {}).setdefault(card["key"], {})
         card_state["dispatch_at"] = now.replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        dispatches.append(
-            f"@{owner} auto-dispatch: `{card['name']}` -> `Em Andamento`. "
-            f"Não use prazo humano largo. {_artifact_guidance(card)}"
-        )
+        if owner not in INTERNAL_OWNERS:
+            dispatches.append(
+                f"@{owner} auto-dispatch: `{card['name']}` -> `Em Andamento`. "
+                f"Não use prazo humano largo. {_artifact_guidance(card)}"
+            )
         card["list_name"] = "Em Andamento"
     if dispatches:
         _save_state(state)
@@ -431,6 +433,12 @@ def main() -> None:
                 f"- `{card['name']}` está sem tração real depois de {reminder_count} cobranças; abrir/usar unblock e reatribuir se necessário."
             )
             guidance += " Escalada: @Codex assume unblock e @Edwin precisa decidir se quebra ou reatribui esse card."
+        if owner in INTERNAL_OWNERS:
+            print(
+                f"[internal-owner] {owner} | {card['name']} | {reason} | {_artifact_guidance(card)}",
+                file=sys.stderr,
+            )
+            continue
         lines_by_owner.setdefault(owner, []).append(
             f"@{owner} card parado: `{card['name']}` | lista: `{card['list_name']}` | motivo observado: {reason}. "
             f"{guidance}"
@@ -471,6 +479,8 @@ def main() -> None:
     idle_owners = []
     active_owners = {card["owner"] for card in cards if card.get("list_name") in {"Priorizado", "Em Andamento", "Bloqueado"}}
     for owner in sorted({card["owner"] for card in cards}):
+        if owner in INTERNAL_OWNERS:
+            continue
         if owner not in active_owners:
             idle_owners.append(owner)
     if idle_owners or queue_health_lines:
