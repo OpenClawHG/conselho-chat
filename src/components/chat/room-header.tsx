@@ -10,6 +10,7 @@ interface RoomHeaderProps {
   onSettingsClick?: () => void
   liveSummary?: {
     working: number
+    stalled: number
     blocked: number
     ready: number
   }
@@ -39,6 +40,9 @@ export function RoomHeader({ room, onSettingsClick, liveSummary }: RoomHeaderPro
           <>
             <Badge className="border border-emerald-500/20 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/10">
               {liveSummary.working} working
+            </Badge>
+            <Badge className="border border-orange-500/20 bg-orange-500/10 text-orange-200 hover:bg-orange-500/10">
+              {liveSummary.stalled} stalled
             </Badge>
             <Badge className="border border-sky-500/20 bg-sky-500/10 text-sky-200 hover:bg-sky-500/10">
               {liveSummary.ready} ready

@@ -130,7 +130,7 @@ export interface RoomPresenceMember {
   name: string
   type?: string | null
   avatar_url?: string | null
-  state: 'working' | 'blocked' | 'ready' | 'idle' | string
+  state: 'working' | 'stalled' | 'blocked' | 'ready' | 'idle' | string
   current_cards: RoomPresenceCard[]
   next_task?: string | null
   active_jobs: number

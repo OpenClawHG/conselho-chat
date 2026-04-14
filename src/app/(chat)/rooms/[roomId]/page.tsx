@@ -146,6 +146,7 @@ export default function RoomPage() {
 
   const liveSummary = {
     working: (presence?.members || []).filter((item) => item.state === "working").length,
+    stalled: (presence?.members || []).filter((item) => item.state === "stalled").length,
     ready: (presence?.members || []).filter((item) => item.state === "ready").length,
     blocked: (presence?.members || []).filter((item) => item.state === "blocked").length,
   }
