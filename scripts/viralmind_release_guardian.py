@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -131,18 +132,23 @@ def _service_active(service: str) -> bool:
 
 
 def _smoke(target: Target) -> tuple[bool, str]:
-    try:
-        response = httpx.get(target.smoke_url, timeout=httpx.Timeout(10.0, connect=3.0))
-    except httpx.HTTPError as exc:
-        return False, str(exc)
-    body = response.text.lower()
-    if response.status_code >= 400:
-        return False, f"http {response.status_code}"
-    if target.smoke_expect == "ok" and "ok" not in body:
-        return False, "health body sem ok"
-    if target.smoke_expect == "html" and "<html" not in body and "<!doctype html" not in body:
-        return False, "resposta sem html"
-    return True, f"http {response.status_code}"
+    last_reason = "smoke nao executado"
+    for _ in range(3):
+        try:
+            response = httpx.get(target.smoke_url, timeout=httpx.Timeout(10.0, connect=3.0))
+            body = response.text.lower()
+            if response.status_code >= 400:
+                last_reason = f"http {response.status_code}"
+            elif target.smoke_expect == "ok" and "ok" not in body:
+                last_reason = "health body sem ok"
+            elif target.smoke_expect == "html" and "<html" not in body and "<!doctype html" not in body:
+                last_reason = "resposta sem html"
+            else:
+                return True, f"http {response.status_code}"
+        except httpx.HTTPError as exc:
+            last_reason = str(exc)
+        time.sleep(2)
+    return False, last_reason
 
 
 def _target_status(target: Target) -> dict[str, Any]:
@@ -206,6 +212,7 @@ def _deploy_target(status: dict[str, Any]) -> dict[str, Any]:
                 "critical": [restart.stderr.strip() or restart.stdout.strip() or "restart falhou"],
             }
         actions.append("restart " + ",".join(target.restart_services))
+        time.sleep(3)
 
     ok, smoke_reason = _smoke(target)
     if not ok:
