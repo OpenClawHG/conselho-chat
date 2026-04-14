@@ -96,8 +96,8 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _run(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(list(args), text=True, capture_output=True, check=False)
+def _run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(list(args), text=True, capture_output=True, check=False, cwd=str(cwd) if cwd else None)
 
 
 def _head_changed_paths(repo: Path) -> list[str]:
@@ -116,6 +116,20 @@ def _head_has_runtime_changes(target: Target, changed_paths: list[str]) -> bool:
         if any(path == prefix or path.startswith(prefix) for prefix in target.runtime_paths):
             return True
     return False
+
+
+def _needs_node_install(changed_paths: list[str]) -> bool:
+    return any(path in {"package.json", "package-lock.json"} for path in changed_paths)
+
+
+def _build_target(target: Target, changed_paths: list[str]) -> subprocess.CompletedProcess[str] | None:
+    if target.name not in {"frontend", "chat"}:
+        return None
+    if _needs_node_install(changed_paths):
+        install = _run("npm", "ci", "--prefer-offline", cwd=target.repo_path)
+        if install.returncode != 0:
+            return install
+    return _run("npm", "run", "build", cwd=target.repo_path)
 
 
 def _post_room_message(content: str) -> None:
@@ -222,6 +236,8 @@ def _deploy_target(status: dict[str, Any]) -> dict[str, Any]:
             "critical": [f"repo sujo em {repo}"],
         }
 
+    changed_paths = _head_changed_paths(repo)
+
     if status["local"] != status["remote"]:
         pull = _git(repo, "pull", "--ff-only", "origin", target.branch)
         if pull.returncode != 0:
@@ -232,7 +248,19 @@ def _deploy_target(status: dict[str, Any]) -> dict[str, Any]:
                 "critical": [pull.stderr.strip() or pull.stdout.strip() or "git pull falhou"],
             }
         actions.append(f"pull {target.branch}")
-        status["runtime_changed"] = _head_has_runtime_changes(target, _head_changed_paths(repo))
+        changed_paths = _head_changed_paths(repo)
+        status["runtime_changed"] = _head_has_runtime_changes(target, changed_paths)
+
+    if status["runtime_changed"] and target.name in {"frontend", "chat"}:
+        build = _build_target(target, changed_paths)
+        if build is not None and build.returncode != 0:
+            return {
+                "target": target.name,
+                "status": "build_failed",
+                "actions": actions,
+                "critical": [build.stderr.strip() or build.stdout.strip() or "build falhou"],
+            }
+        actions.append("build")
 
     if (not status["active"]) or status["runtime_changed"]:
         restart = _run("systemctl", "restart", *target.restart_services)
