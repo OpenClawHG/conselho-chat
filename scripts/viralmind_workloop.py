@@ -162,6 +162,7 @@ def _get_board_cards() -> list[dict]:
                 "owner": spec["owner"],
                 "list_name": lists.get(match.get("listId")),
                 "artifact_paths": spec.get("artifact_paths") or [],
+                "canonical_list_name": spec.get("list_name"),
                 "position": match.get("position") or 65536,
                 "board_id": board["id"],
             }
@@ -350,9 +351,13 @@ def main() -> None:
     now = _now()
     cards = _get_board_cards()
     dispatch_lines = _dispatch_ready_cards(cards, now)
-    tracked_cards = [card for card in cards if card.get("list_name") in TRACKED_LISTS]
+    tracked_cards = [
+        card
+        for card in cards
+        if card.get("list_name") in TRACKED_LISTS and card.get("canonical_list_name") != "Gestão"
+    ]
 
-    lines: list[str] = []
+    lines_by_owner: dict[str, list[str]] = {}
     for card in tracked_cards:
         owner = card["owner"]
         last_update = _latest_owner_card_update(owner, card["name"])
@@ -395,27 +400,42 @@ def main() -> None:
             guidance += " Evidência preferida: commit compartilhado tocando " + ", ".join(f"`{path}`" for path in artifact_paths) + "."
         if evidence_excerpt:
             guidance += f" Última evidência vista: {evidence_excerpt}"
-        lines.append(
+        lines_by_owner.setdefault(owner, []).append(
             f"@{owner} card parado: `{card['name']}` | lista: `{card['list_name']}` | motivo observado: {reason}. "
             f"{guidance}"
         )
 
-    if not lines and not dispatch_lines:
+    dispatch_by_owner: dict[str, list[str]] = {}
+    for line in dispatch_lines:
+        owner_match = re.match(r"@([^\s]+)\s+", line)
+        owner = owner_match.group(1) if owner_match else "room"
+        dispatch_by_owner.setdefault(owner, []).append(line)
+
+    if not lines_by_owner and not dispatch_by_owner:
         print("ViralMind workloop OK: sem owners parados além do limite.")
         return
 
-    sections: list[str] = []
-    if dispatch_lines:
-        sections.append("Dispatch:\n- " + "\n- ".join(dispatch_lines))
-    if lines:
-        sections.append(f"Workloop ViralMind ({IDLE_MINUTES}min):\n- " + "\n- ".join(lines))
-    message = "\n\n".join(sections)
-    result = post_room_message(message)
-    if result:
-        for card in tracked_cards:
-            owner_line = f"@{card['owner']} card parado: `{card['name']}`"
-            if owner_line in message:
-                _record_reminder(card["key"], now)
+    posted_any = False
+    owners = sorted(set(dispatch_by_owner) | set(lines_by_owner))
+    for owner in owners:
+        sections: list[str] = []
+        owner_dispatches = dispatch_by_owner.get(owner) or []
+        owner_lines = lines_by_owner.get(owner) or []
+        if owner_dispatches:
+            sections.append("Dispatch:\n- " + "\n- ".join(owner_dispatches))
+        if owner_lines:
+            sections.append(f"Workloop ViralMind ({IDLE_MINUTES}min):\n- " + "\n- ".join(owner_lines))
+        if not sections:
+            continue
+        message = "\n\n".join(sections)
+        result = post_room_message(message)
+        if result:
+            posted_any = True
+            for card in tracked_cards:
+                owner_line = f"@{card['owner']} card parado: `{card['name']}`"
+                if owner_line in message:
+                    _record_reminder(card["key"], now)
+    if posted_any:
         print("Cobrança enviada.")
         return
     raise SystemExit(1)
