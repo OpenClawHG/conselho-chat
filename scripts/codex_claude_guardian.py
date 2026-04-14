@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -29,6 +30,11 @@ CODEX_AGENT_ID = os.getenv("CODEX_AGENT_ID", "789033d5-66de-4ef0-b4f4-183452b5a8
 WORKER_SERVICE = os.getenv("CODEX_CLAUDE_WORKER_SERVICE", "openclaw-codex-agent-worker.service").strip()
 STALE_SECONDS = int(os.getenv("CODEX_CLAUDE_STALE_SECONDS", "90"))
 STATE_FILE = Path("/root/.openclaw/workspace/runtime/codex_claude_guardian_state.json")
+FOLLOW_UP_PROMISE_RE = re.compile(
+    r"\b(volto com|volto assim que|assim que sair o n[uú]mero|depois eu retorno|"
+    r"logo na sequ[êe]ncia|j[aá] est[aá] rodando|refresh j[aá] est[aá] rodando)\b",
+    flags=re.IGNORECASE,
+)
 
 
 def _load_state() -> dict[str, Any]:
@@ -99,6 +105,33 @@ def _room_has_unanswered_claude(messages: list[dict[str, Any]]) -> tuple[bool, s
     return age >= STALE_SECONDS, latest_claude.get("id"), age
 
 
+def _room_has_open_codex_followup(messages: list[dict[str, Any]]) -> tuple[bool, str | None, str | None, float]:
+    ordered = sorted(messages, key=lambda msg: (_parse_when(msg.get("created_at") or "") or datetime.min.replace(tzinfo=timezone.utc)))
+    latest_promise_index: int | None = None
+    latest_promise: dict[str, Any] | None = None
+    for idx, msg in enumerate(ordered):
+        sender = ((msg.get("sender") or {}).get("name") or msg.get("sender_name") or "").strip()
+        content = (msg.get("content") or "").strip()
+        if sender == "Codex" and FOLLOW_UP_PROMISE_RE.search(content):
+            latest_promise_index = idx
+            latest_promise = msg
+    if latest_promise_index is None or not latest_promise:
+        return False, None, None, 0.0
+    for msg in ordered[latest_promise_index + 1 :]:
+        sender = ((msg.get("sender") or {}).get("name") or msg.get("sender_name") or "").strip()
+        if sender == "Codex":
+            return False, latest_promise.get("id"), None, 0.0
+    trigger_message_id = None
+    for msg in reversed(ordered[:latest_promise_index]):
+        sender = ((msg.get("sender") or {}).get("name") or msg.get("sender_name") or "").strip()
+        if sender != "Codex":
+            trigger_message_id = msg.get("id")
+            break
+    created_at = _parse_when(latest_promise.get("created_at") or "")
+    age = (datetime.now(timezone.utc) - created_at).total_seconds() if created_at else 0.0
+    return age >= STALE_SECONDS, latest_promise.get("id"), trigger_message_id, age
+
+
 def _ensure_pending_notification(message_id: str | None) -> bool:
     if not message_id:
         return False
@@ -130,12 +163,19 @@ def main() -> None:
     pending, messages = _fetch_pending_and_room()
     worker_ok = _service_active(WORKER_SERVICE)
     stale_room, stale_message_id, stale_age = _room_has_unanswered_claude(messages)
+    stale_followup, stale_followup_id, followup_trigger_id, stale_followup_age = _room_has_open_codex_followup(messages)
     room_pending = [n for n in pending if (n.get("room_id") or "") == ROOM_ID]
 
     restart_reason = None
     requeued = False
     if not worker_ok:
         restart_reason = "worker_inactive"
+    elif stale_followup and followup_trigger_id:
+        last_restarted_for = state.get("last_restarted_for_followup_id")
+        if stale_followup_id and stale_followup_id != last_restarted_for:
+            requeued = _ensure_pending_notification(followup_trigger_id)
+            if requeued:
+                restart_reason = "requeued_open_codex_followup"
     elif room_pending and stale_room:
         last_restarted_for = state.get("last_restarted_for_message_id")
         if stale_message_id and stale_message_id != last_restarted_for:
@@ -150,11 +190,15 @@ def main() -> None:
         state["last_restart_at"] = datetime.now(timezone.utc).isoformat()
         state["last_restart_reason"] = restart_reason
         state["last_restarted_for_message_id"] = stale_message_id
+        state["last_restarted_for_followup_id"] = stale_followup_id
 
     state["worker_active"] = _service_active(WORKER_SERVICE)
     state["room_pending_count"] = len(room_pending)
     state["stale_room_message"] = stale_room
     state["stale_room_age_seconds"] = stale_age
+    state["open_codex_followup"] = stale_followup
+    state["open_codex_followup_age_seconds"] = stale_followup_age
+    state["open_codex_followup_message_id"] = stale_followup_id
     state["requeued_stale_message"] = requeued
     state["last_checked_at"] = datetime.now(timezone.utc).isoformat()
     _save_state(state)
