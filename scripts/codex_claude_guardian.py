@@ -4,12 +4,19 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import httpx
 from dotenv import load_dotenv
+
+API_ROOT = Path("/opt/viralmind/apps/api")
+if str(API_ROOT) not in sys.path:
+    sys.path.insert(0, str(API_ROOT))
+
+from models.database import get_chat_supabase_admin
 
 
 load_dotenv("/root/.openclaw/.env", override=False)
@@ -18,6 +25,7 @@ load_dotenv("/opt/viralmind/apps/api/.env", override=False)
 ROOM_ID = os.getenv("CODEX_CLAUDE_ROOM_ID", "d0aabf34-0e5b-44da-855a-79c032bf5360").strip()
 API_BASE_URL = os.getenv("CHAT_AGENT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
 CODEX_TOKEN = os.getenv("CODEX_AGENT_TOKEN", "").strip()
+CODEX_AGENT_ID = os.getenv("CODEX_AGENT_ID", "789033d5-66de-4ef0-b4f4-183452b5a81c").strip()
 WORKER_SERVICE = os.getenv("CODEX_CLAUDE_WORKER_SERVICE", "openclaw-codex-agent-worker.service").strip()
 STALE_SECONDS = int(os.getenv("CODEX_CLAUDE_STALE_SECONDS", "90"))
 STATE_FILE = Path("/root/.openclaw/workspace/runtime/codex_claude_guardian_state.json")
@@ -71,9 +79,10 @@ def _fetch_pending_and_room() -> tuple[list[dict[str, Any]], list[dict[str, Any]
 
 
 def _room_has_unanswered_claude(messages: list[dict[str, Any]]) -> tuple[bool, str | None, float]:
+    ordered = sorted(messages, key=lambda msg: (_parse_when(msg.get("created_at") or "") or datetime.min.replace(tzinfo=timezone.utc)))
     latest_claude: dict[str, Any] | None = None
     latest_codex_after: dict[str, Any] | None = None
-    for msg in reversed(messages):
+    for msg in reversed(ordered):
         sender = ((msg.get("sender") or {}).get("name") or msg.get("sender_name") or "").strip()
         if not latest_claude and sender == "Claude Code":
             latest_claude = msg
@@ -93,6 +102,32 @@ def _room_has_unanswered_claude(messages: list[dict[str, Any]]) -> tuple[bool, s
     return age >= STALE_SECONDS, latest_claude.get("id"), age
 
 
+def _ensure_pending_notification(message_id: str | None) -> bool:
+    if not message_id:
+        return False
+    sb = get_chat_supabase_admin()
+    existing = (
+        sb.table("chat_notifications")
+        .select("id,status")
+        .eq("agent_id", CODEX_AGENT_ID)
+        .eq("message_id", message_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    ).data or []
+    if existing and existing[0].get("status") == "pending":
+        return False
+    sb.table("chat_notifications").insert(
+        {
+            "agent_id": CODEX_AGENT_ID,
+            "room_id": ROOM_ID,
+            "message_id": message_id,
+            "status": "pending",
+        }
+    ).execute()
+    return True
+
+
 def main() -> None:
     state = _load_state()
     pending, messages = _fetch_pending_and_room()
@@ -101,12 +136,17 @@ def main() -> None:
     room_pending = [n for n in pending if (n.get("room_id") or "") == ROOM_ID]
 
     restart_reason = None
+    requeued = False
     if not worker_ok:
         restart_reason = "worker_inactive"
     elif room_pending and stale_room:
         last_restarted_for = state.get("last_restarted_for_message_id")
         if stale_message_id and stale_message_id != last_restarted_for:
             restart_reason = "stale_pending_message"
+    elif stale_room and stale_message_id:
+        requeued = _ensure_pending_notification(stale_message_id)
+        if requeued:
+            restart_reason = "requeued_stale_room_message"
 
     if restart_reason:
         _run("systemctl", "restart", WORKER_SERVICE)
@@ -118,6 +158,7 @@ def main() -> None:
     state["room_pending_count"] = len(room_pending)
     state["stale_room_message"] = stale_room
     state["stale_room_age_seconds"] = stale_age
+    state["requeued_stale_message"] = requeued
     state["last_checked_at"] = datetime.now(timezone.utc).isoformat()
     _save_state(state)
 
