@@ -29,6 +29,8 @@ GUARDIAN_SERVICE = "openclaw-codex-claude-guardian.service"
 GUARDIAN_TIMER = "openclaw-codex-claude-guardian.timer"
 STATE_FILE = Path("/root/.openclaw/workspace/runtime/codex_claude_audit_5h_state.json")
 CONTROL_FILE = Path("/root/.openclaw/workspace/runtime/codex_claude_audit_5h_control.json")
+IDLE_NUDGE_SECONDS = int(os.getenv("CODEX_CLAUDE_AUDIT_IDLE_NUDGE_SECONDS", "300"))
+IDLE_NUDGE_COOLDOWN_SECONDS = int(os.getenv("CODEX_CLAUDE_AUDIT_IDLE_NUDGE_COOLDOWN_SECONDS", "900"))
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
@@ -79,6 +81,19 @@ def _fetch_room_snapshot() -> dict[str, Any]:
     }
 
 
+def _post_room_message(content: str) -> bool:
+    if not CODEX_TOKEN:
+        return False
+    with httpx.Client(
+        base_url=API_BASE_URL,
+        timeout=httpx.Timeout(20.0, connect=5.0),
+        headers={"Authorization": f"Bearer {CODEX_TOKEN}"},
+    ) as client:
+        response = client.post(f"/api/chat/rooms/{ROOM_ID}/messages", json={"content": content})
+        response.raise_for_status()
+    return True
+
+
 def _last_message(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
     ordered = sorted(messages, key=lambda msg: (_parse_when(msg.get("created_at") or "") or datetime.min.replace(tzinfo=timezone.utc)))
     return ordered[-1] if ordered else None
@@ -126,6 +141,24 @@ def main() -> None:
     messages = snapshot["messages"]
     pending = [n for n in snapshot["pending_notifications"] if (n.get("room_id") or "") == ROOM_ID]
     last_msg = _last_message(messages)
+    last_msg_age = _message_age_seconds(last_msg)
+
+    idle_nudge_sent = False
+    last_idle_nudge_at = _parse_when(state.get("last_idle_nudge_at") or "")
+    idle_nudge_due = (
+        (last_msg_age or 0) >= IDLE_NUDGE_SECONDS
+        and not pending
+        and (not last_idle_nudge_at or (now - last_idle_nudge_at).total_seconds() >= IDLE_NUDGE_COOLDOWN_SECONDS)
+    )
+    if idle_nudge_due:
+        idle_nudge_sent = _post_room_message(
+            "A sala esfriou sem pendencia aberta. Vamos manter throughput: escolham a melhoria de maior impacto agora e executem. "
+            "Pode ser bug, UX/UI, verdade dos dados, fluxo de memoria, ranking de padrões ou corpus/trending. "
+            "Claude implementa a frente; eu reviso, deployo, faço smoke e fecho o root cause se aparecer bloqueio."
+        )
+        if idle_nudge_sent:
+            actions.append("post_idle_nudge")
+            state["last_idle_nudge_at"] = now.isoformat()
 
     _save_state(
         {
@@ -138,8 +171,10 @@ def main() -> None:
             "room_pending_count": len(pending),
             "last_message_sender": (last_msg or {}).get("sender_name"),
             "last_message_id": (last_msg or {}).get("id"),
-            "last_message_age_seconds": _message_age_seconds(last_msg),
+            "last_message_age_seconds": last_msg_age,
+            "idle_nudge_sent": idle_nudge_sent,
             "actions": actions,
+            "last_idle_nudge_at": state.get("last_idle_nudge_at"),
         }
     )
 
