@@ -32,6 +32,7 @@ class Target:
     restart_services: list[str]
     smoke_url: str
     smoke_expect: str
+    runtime_paths: tuple[str, ...]
 
 
 TARGETS = [
@@ -49,6 +50,7 @@ TARGETS = [
         ],
         smoke_url="http://127.0.0.1:8000/api/health",
         smoke_expect="ok",
+        runtime_paths=("apps/api/", "supabase/", "alembic/", "scripts/"),
     ),
     Target(
         name="frontend",
@@ -58,6 +60,7 @@ TARGETS = [
         restart_services=["viralmind-web.service"],
         smoke_url="http://127.0.0.1:3002/login",
         smoke_expect="html",
+        runtime_paths=("src/", "public/", "package.json", "package-lock.json", "next.config", "tsconfig"),
     ),
     Target(
         name="chat",
@@ -67,6 +70,7 @@ TARGETS = [
         restart_services=["openclaw-chat.service"],
         smoke_url="http://127.0.0.1:3001/login",
         smoke_expect="html",
+        runtime_paths=("src/", "public/", "scripts/", "package.json", "package-lock.json", "next.config", "tsconfig"),
     ),
 ]
 
@@ -94,6 +98,24 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(list(args), text=True, capture_output=True, check=False)
+
+
+def _head_changed_paths(repo: Path) -> list[str]:
+    result = _git(repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def _head_has_runtime_changes(target: Target, changed_paths: list[str]) -> bool:
+    if not changed_paths:
+        return True
+    for path in changed_paths:
+        if path.startswith("docs/") or path.endswith(".md"):
+            continue
+        if any(path == prefix or path.startswith(prefix) for prefix in target.runtime_paths):
+            return True
+    return False
 
 
 def _post_room_message(content: str) -> None:
@@ -155,6 +177,8 @@ def _target_status(target: Target) -> dict[str, Any]:
     _git(target.repo_path, "fetch", "origin", "--prune")
     local = _git(target.repo_path, "rev-parse", "--short", "HEAD").stdout.strip()
     remote = _git(target.repo_path, "rev-parse", "--short", f"origin/{target.branch}").stdout.strip()
+    changed_paths = _head_changed_paths(target.repo_path)
+    runtime_changed = _head_has_runtime_changes(target, changed_paths)
     raw_status = _git(target.repo_path, "status", "--short").stdout.splitlines()
     relevant_status = [
         line
@@ -168,7 +192,7 @@ def _target_status(target: Target) -> dict[str, Any]:
     active = _service_active(target.service)
     pending_deploy = bool(
         (local and remote and local != remote)
-        or (commit_at and started_at and started_at < commit_at)
+        or (commit_at and started_at and started_at < commit_at and runtime_changed)
         or not active
     )
     return {
@@ -179,6 +203,7 @@ def _target_status(target: Target) -> dict[str, Any]:
         "active": active,
         "started_at": started_at.isoformat() if started_at else None,
         "commit_at": commit_at.isoformat() if commit_at else None,
+        "runtime_changed": runtime_changed,
         "pending_deploy": pending_deploy,
     }
 
@@ -207,8 +232,9 @@ def _deploy_target(status: dict[str, Any]) -> dict[str, Any]:
                 "critical": [pull.stderr.strip() or pull.stdout.strip() or "git pull falhou"],
             }
         actions.append(f"pull {target.branch}")
+        status["runtime_changed"] = _head_has_runtime_changes(target, _head_changed_paths(repo))
 
-    if status["pending_deploy"]:
+    if (not status["active"]) or status["runtime_changed"]:
         restart = _run("systemctl", "restart", *target.restart_services)
         if restart.returncode != 0:
             return {
