@@ -107,6 +107,15 @@ def _head_changed_paths(repo: Path) -> list[str]:
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
+def _changed_paths_between(repo: Path, old_ref: str, new_ref: str) -> list[str]:
+    if not old_ref or not new_ref or old_ref == new_ref:
+        return []
+    result = _git(repo, "diff", "--name-only", f"{old_ref}..{new_ref}")
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
 def _head_has_runtime_changes(target: Target, changed_paths: list[str]) -> bool:
     if not changed_paths:
         return True
@@ -237,6 +246,7 @@ def _deploy_target(status: dict[str, Any]) -> dict[str, Any]:
         }
 
     changed_paths = _head_changed_paths(repo)
+    old_local = status["local"]
 
     if status["local"] != status["remote"]:
         pull = _git(repo, "pull", "--ff-only", "origin", target.branch)
@@ -247,8 +257,10 @@ def _deploy_target(status: dict[str, Any]) -> dict[str, Any]:
                 "actions": [],
                 "critical": [pull.stderr.strip() or pull.stdout.strip() or "git pull falhou"],
             }
-        actions.append(f"pull {target.branch}")
-        changed_paths = _head_changed_paths(repo)
+        new_local = _git(repo, "rev-parse", "--short", "HEAD").stdout.strip()
+        if new_local != old_local:
+            actions.append(f"pull {target.branch}")
+        changed_paths = _changed_paths_between(repo, old_local, new_local) or _head_changed_paths(repo)
         status["runtime_changed"] = _head_has_runtime_changes(target, changed_paths)
 
     if status["runtime_changed"] and target.name in {"frontend", "chat"}:
