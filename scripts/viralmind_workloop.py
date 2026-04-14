@@ -374,11 +374,19 @@ def main() -> None:
             and dispatch_at is not None
             and (now - dispatch_at) >= timedelta(minutes=FIRST_EVIDENCE_MINUTES)
         )
+        within_initial_evidence_window = (
+            card.get("list_name") == "Em Andamento"
+            and delivery_state not in {"verified_progress", "verified_done"}
+            and dispatch_at is not None
+            and (now - dispatch_at) < timedelta(minutes=FIRST_EVIDENCE_MINUTES)
+        )
         stale_verified_evidence = (
             verified_at is not None
             and card.get("list_name") == "Em Andamento"
             and (now - verified_at) >= timedelta(minutes=IDLE_MINUTES)
         )
+        if within_initial_evidence_window:
+            continue
         idle = missing_first_evidence or stale_verified_evidence or (last_evidence is None or (now - last_evidence) >= timedelta(minutes=IDLE_MINUTES))
         if not idle:
             continue
