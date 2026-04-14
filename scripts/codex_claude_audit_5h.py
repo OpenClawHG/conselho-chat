@@ -49,6 +49,13 @@ def _load_control() -> dict[str, Any]:
         return {}
 
 
+def _load_state() -> dict[str, Any]:
+    try:
+        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
 def _save_state(payload: dict[str, Any]) -> None:
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -110,6 +117,7 @@ def _message_age_seconds(msg: dict[str, Any] | None) -> float | None:
 
 def main() -> None:
     control = _load_control()
+    state = _load_state()
     now = datetime.now(timezone.utc)
     end_at = _parse_when(control.get("end_at") or "")
     if end_at and now > end_at:
