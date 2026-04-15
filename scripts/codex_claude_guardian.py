@@ -105,6 +105,27 @@ def _room_has_unanswered_claude(messages: list[dict[str, Any]]) -> tuple[bool, s
     return age >= STALE_SECONDS, latest_claude.get("id"), age
 
 
+def _room_has_unanswered_hugo(messages: list[dict[str, Any]]) -> tuple[bool, str | None, float]:
+    ordered = sorted(messages, key=lambda msg: (_parse_when(msg.get("created_at") or "") or datetime.min.replace(tzinfo=timezone.utc)))
+    latest_hugo_index: int | None = None
+    latest_hugo: dict[str, Any] | None = None
+    for idx, msg in enumerate(ordered):
+        sender = ((msg.get("sender") or {}).get("name") or msg.get("sender_name") or "").strip()
+        if sender == "Hugo Venda":
+            latest_hugo_index = idx
+            latest_hugo = msg
+    if not latest_hugo:
+        return False, None, 0.0
+    if latest_hugo_index is not None:
+        for msg in ordered[latest_hugo_index + 1 :]:
+            sender = ((msg.get("sender") or {}).get("name") or msg.get("sender_name") or "").strip()
+            if sender == "Codex":
+                return False, latest_hugo.get("id"), 0.0
+    created_at = _parse_when(latest_hugo.get("created_at") or "")
+    age = (datetime.now(timezone.utc) - created_at).total_seconds() if created_at else 0.0
+    return age >= STALE_SECONDS, latest_hugo.get("id"), age
+
+
 def _room_has_open_codex_followup(messages: list[dict[str, Any]]) -> tuple[bool, str | None, str | None, float]:
     ordered = sorted(messages, key=lambda msg: (_parse_when(msg.get("created_at") or "") or datetime.min.replace(tzinfo=timezone.utc)))
     latest_promise_index: int | None = None
@@ -163,6 +184,7 @@ def main() -> None:
     pending, messages = _fetch_pending_and_room()
     worker_ok = _service_active(WORKER_SERVICE)
     stale_room, stale_message_id, stale_age = _room_has_unanswered_claude(messages)
+    stale_hugo, stale_hugo_message_id, stale_hugo_age = _room_has_unanswered_hugo(messages)
     stale_followup, stale_followup_id, followup_trigger_id, stale_followup_age = _room_has_open_codex_followup(messages)
     room_pending = [n for n in pending if (n.get("room_id") or "") == ROOM_ID]
 
@@ -180,6 +202,10 @@ def main() -> None:
         last_restarted_for = state.get("last_restarted_for_message_id")
         if stale_message_id and stale_message_id != last_restarted_for:
             restart_reason = "stale_pending_message"
+    elif stale_hugo and stale_hugo_message_id:
+        requeued = _ensure_pending_notification(stale_hugo_message_id)
+        if requeued:
+            restart_reason = "requeued_stale_hugo_message"
     elif stale_room and stale_message_id:
         requeued = _ensure_pending_notification(stale_message_id)
         if requeued:
@@ -196,6 +222,9 @@ def main() -> None:
     state["room_pending_count"] = len(room_pending)
     state["stale_room_message"] = stale_room
     state["stale_room_age_seconds"] = stale_age
+    state["stale_hugo_message"] = stale_hugo
+    state["stale_hugo_age_seconds"] = stale_hugo_age
+    state["stale_hugo_message_id"] = stale_hugo_message_id
     state["open_codex_followup"] = stale_followup
     state["open_codex_followup_age_seconds"] = stale_followup_age
     state["open_codex_followup_message_id"] = stale_followup_id
