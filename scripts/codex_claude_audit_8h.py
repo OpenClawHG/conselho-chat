@@ -191,9 +191,6 @@ def main() -> None:
         _run("systemctl", "restart", GUARDIAN_TIMER)
         actions.append("restart_guardian_timer")
 
-    _run("systemctl", "start", GUARDIAN_SERVICE)
-    actions.append("run_guardian_once")
-
     snapshot = _fetch_room_snapshot()
     messages = snapshot["messages"]
     pending = [n for n in snapshot["pending_notifications"] if (n.get("room_id") or "") == ROOM_ID]

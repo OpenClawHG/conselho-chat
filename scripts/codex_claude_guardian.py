@@ -272,8 +272,6 @@ def main() -> None:
 
     if restart_reason:
         _run("systemctl", "restart", WORKER_SERVICE)
-        if restart_reason in {"requeued_retryable_codex_block", "requeued_open_codex_followup"}:
-            _run("systemctl", "start", AUDIT_SERVICE)
         state["last_restart_at"] = datetime.now(timezone.utc).isoformat()
         state["last_restart_reason"] = restart_reason
         state["last_restarted_for_message_id"] = stale_message_id
@@ -294,7 +292,7 @@ def main() -> None:
     state["retryable_codex_block_age_seconds"] = stale_block_age
     state["retryable_codex_block_message_id"] = stale_block_id
     state["retryable_codex_block_signature"] = _block_signature(_latest_message_content(messages, stale_block_id))
-    state["audit_service_triggered"] = restart_reason in {"requeued_retryable_codex_block", "requeued_open_codex_followup"}
+    state["audit_service_triggered"] = False
     state["requeued_stale_message"] = requeued
     state["last_checked_at"] = datetime.now(timezone.utc).isoformat()
     _save_state(state)
