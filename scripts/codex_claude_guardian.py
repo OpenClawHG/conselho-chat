@@ -35,6 +35,10 @@ FOLLOW_UP_PROMISE_RE = re.compile(
     r"logo na sequ[êe]ncia|j[aá] est[aá] rodando|refresh j[aá] est[aá] rodando)\b",
     flags=re.IGNORECASE,
 )
+BLOCKED_REPLY_RE = re.compile(
+    r"(?:^|\n)\s*(?:bloqueio:|status:\s*bloqueado|rodei a sequencia ate bater no bloqueio|comando nao permitido)",
+    flags=re.IGNORECASE,
+)
 
 
 def _load_state() -> dict[str, Any]:
@@ -153,6 +157,33 @@ def _room_has_open_codex_followup(messages: list[dict[str, Any]]) -> tuple[bool,
     return age >= STALE_SECONDS, latest_promise.get("id"), trigger_message_id, age
 
 
+def _room_has_retryable_codex_block(messages: list[dict[str, Any]]) -> tuple[bool, str | None, str | None, float]:
+    ordered = sorted(messages, key=lambda msg: (_parse_when(msg.get("created_at") or "") or datetime.min.replace(tzinfo=timezone.utc)))
+    latest_block_index: int | None = None
+    latest_block: dict[str, Any] | None = None
+    for idx, msg in enumerate(ordered):
+        sender = ((msg.get("sender") or {}).get("name") or msg.get("sender_name") or "").strip()
+        content = (msg.get("content") or "").strip()
+        if sender == "Codex" and BLOCKED_REPLY_RE.search(content):
+            latest_block_index = idx
+            latest_block = msg
+    if latest_block_index is None or not latest_block:
+        return False, None, None, 0.0
+    for msg in ordered[latest_block_index + 1 :]:
+        sender = ((msg.get("sender") or {}).get("name") or msg.get("sender_name") or "").strip()
+        if sender == "Codex":
+            return False, latest_block.get("id"), None, 0.0
+    trigger_message_id = None
+    for msg in reversed(ordered[:latest_block_index]):
+        sender = ((msg.get("sender") or {}).get("name") or msg.get("sender_name") or "").strip()
+        if sender != "Codex":
+            trigger_message_id = msg.get("id")
+            break
+    created_at = _parse_when(latest_block.get("created_at") or "")
+    age = (datetime.now(timezone.utc) - created_at).total_seconds() if created_at else 0.0
+    return age >= STALE_SECONDS, latest_block.get("id"), trigger_message_id, age
+
+
 def _ensure_pending_notification(message_id: str | None) -> bool:
     if not message_id:
         return False
@@ -186,6 +217,7 @@ def main() -> None:
     stale_room, stale_message_id, stale_age = _room_has_unanswered_claude(messages)
     stale_hugo, stale_hugo_message_id, stale_hugo_age = _room_has_unanswered_hugo(messages)
     stale_followup, stale_followup_id, followup_trigger_id, stale_followup_age = _room_has_open_codex_followup(messages)
+    stale_block, stale_block_id, blocked_trigger_id, stale_block_age = _room_has_retryable_codex_block(messages)
     room_pending = [n for n in pending if (n.get("room_id") or "") == ROOM_ID]
 
     restart_reason = None
@@ -198,6 +230,12 @@ def main() -> None:
             requeued = _ensure_pending_notification(followup_trigger_id)
             if requeued:
                 restart_reason = "requeued_open_codex_followup"
+    elif stale_block and blocked_trigger_id:
+        last_restarted_for = state.get("last_restarted_for_blocked_reply_id")
+        if stale_block_id and stale_block_id != last_restarted_for:
+            requeued = _ensure_pending_notification(blocked_trigger_id)
+            if requeued:
+                restart_reason = "requeued_retryable_codex_block"
     elif room_pending and stale_room:
         last_restarted_for = state.get("last_restarted_for_message_id")
         if stale_message_id and stale_message_id != last_restarted_for:
@@ -217,6 +255,7 @@ def main() -> None:
         state["last_restart_reason"] = restart_reason
         state["last_restarted_for_message_id"] = stale_message_id
         state["last_restarted_for_followup_id"] = stale_followup_id
+        state["last_restarted_for_blocked_reply_id"] = stale_block_id
 
     state["worker_active"] = _service_active(WORKER_SERVICE)
     state["room_pending_count"] = len(room_pending)
@@ -228,6 +267,9 @@ def main() -> None:
     state["open_codex_followup"] = stale_followup
     state["open_codex_followup_age_seconds"] = stale_followup_age
     state["open_codex_followup_message_id"] = stale_followup_id
+    state["retryable_codex_block"] = stale_block
+    state["retryable_codex_block_age_seconds"] = stale_block_age
+    state["retryable_codex_block_message_id"] = stale_block_id
     state["requeued_stale_message"] = requeued
     state["last_checked_at"] = datetime.now(timezone.utc).isoformat()
     _save_state(state)
