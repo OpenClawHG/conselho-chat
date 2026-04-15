@@ -28,6 +28,7 @@ API_BASE_URL = os.getenv("CHAT_AGENT_API_BASE", "http://127.0.0.1:8000").rstrip(
 CODEX_TOKEN = os.getenv("CODEX_AGENT_TOKEN", "").strip()
 CODEX_AGENT_ID = os.getenv("CODEX_AGENT_ID", "789033d5-66de-4ef0-b4f4-183452b5a81c").strip()
 WORKER_SERVICE = os.getenv("CODEX_CLAUDE_WORKER_SERVICE", "openclaw-codex-agent-worker.service").strip()
+AUDIT_SERVICE = os.getenv("CODEX_CLAUDE_AUDIT_SERVICE", "openclaw-codex-claude-audit-8h.service").strip()
 STALE_SECONDS = int(os.getenv("CODEX_CLAUDE_STALE_SECONDS", "90"))
 STATE_FILE = Path("/root/.openclaw/workspace/runtime/codex_claude_guardian_state.json")
 FOLLOW_UP_PROMISE_RE = re.compile(
@@ -210,6 +211,26 @@ def _ensure_pending_notification(message_id: str | None) -> bool:
     return True
 
 
+def _latest_message_content(messages: list[dict[str, Any]], message_id: str | None) -> str:
+    if not message_id:
+        return ""
+    for msg in messages:
+        if msg.get("id") == message_id:
+            return (msg.get("content") or "").strip()
+    return ""
+
+
+def _block_signature(content: str) -> str:
+    lowered = (content or "").lower()
+    if "git subcomando nao permitido" in lowered:
+        return "git_allowlist"
+    if "migration fora das roots permitidas" in lowered:
+        return "migration_path"
+    if "comando nao permitido" in lowered:
+        return "command_allowlist"
+    return "generic_block"
+
+
 def main() -> None:
     state = _load_state()
     pending, messages = _fetch_pending_and_room()
@@ -251,6 +272,8 @@ def main() -> None:
 
     if restart_reason:
         _run("systemctl", "restart", WORKER_SERVICE)
+        if restart_reason in {"requeued_retryable_codex_block", "requeued_open_codex_followup"}:
+            _run("systemctl", "start", AUDIT_SERVICE)
         state["last_restart_at"] = datetime.now(timezone.utc).isoformat()
         state["last_restart_reason"] = restart_reason
         state["last_restarted_for_message_id"] = stale_message_id
@@ -270,6 +293,8 @@ def main() -> None:
     state["retryable_codex_block"] = stale_block
     state["retryable_codex_block_age_seconds"] = stale_block_age
     state["retryable_codex_block_message_id"] = stale_block_id
+    state["retryable_codex_block_signature"] = _block_signature(_latest_message_content(messages, stale_block_id))
+    state["audit_service_triggered"] = restart_reason in {"requeued_retryable_codex_block", "requeued_open_codex_followup"}
     state["requeued_stale_message"] = requeued
     state["last_checked_at"] = datetime.now(timezone.utc).isoformat()
     _save_state(state)
