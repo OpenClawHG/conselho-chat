@@ -21,6 +21,12 @@ ROOM_ID = os.getenv("VIRALMIND_ROOM_ID", "c091861b-161e-415a-bd79-1b4d559c844b")
 API_BASE_URL = os.getenv("CHAT_AGENT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
 CODEX_TOKEN = os.getenv("CODEX_AGENT_TOKEN", "").strip()
 STATE_FILE = Path("/root/.openclaw/workspace/runtime/viralmind_release_guardian_state.json")
+BACKEND_REQUIREMENTS_PATH = "apps/api/requirements.txt"
+BACKEND_IMPORT_SMOKE = (
+    "import importlib; "
+    "importlib.import_module('main'); "
+    "print('startup import ok')"
+)
 
 
 @dataclass
@@ -139,6 +145,48 @@ def _build_target(target: Target, changed_paths: list[str]) -> subprocess.Comple
         if install.returncode != 0:
             return install
     return _run("npm", "run", "build", cwd=target.repo_path)
+
+
+def _needs_backend_requirements_install(changed_paths: list[str]) -> bool:
+    return BACKEND_REQUIREMENTS_PATH in changed_paths
+
+
+def _backend_preflight(
+    target: Target,
+    changed_paths: list[str],
+    actions: list[str],
+) -> str | None:
+    api_dir = target.repo_path / "apps/api"
+    pip_bin = api_dir / ".venv/bin/pip"
+    python_bin = api_dir / ".venv/bin/python"
+    requirements_changed = _needs_backend_requirements_install(changed_paths)
+
+    def _install_requirements(label: str) -> subprocess.CompletedProcess[str]:
+        result = _run(str(pip_bin), "install", "-r", "requirements.txt", cwd=api_dir)
+        if result.returncode == 0:
+            actions.append(label)
+        return result
+
+    if requirements_changed:
+        install = _install_requirements("pip install -r requirements.txt")
+        if install.returncode != 0:
+            return install.stderr.strip() or install.stdout.strip() or "pip install -r requirements.txt falhou"
+
+    import_smoke = _run(str(python_bin), "-c", BACKEND_IMPORT_SMOKE, cwd=api_dir)
+    if import_smoke.returncode == 0:
+        actions.append("startup import smoke")
+        return None
+
+    if not requirements_changed:
+        install = _install_requirements("pip install -r requirements.txt (recovery)")
+        if install.returncode != 0:
+            return install.stderr.strip() or install.stdout.strip() or "pip install -r requirements.txt falhou"
+        import_smoke = _run(str(python_bin), "-c", BACKEND_IMPORT_SMOKE, cwd=api_dir)
+        if import_smoke.returncode == 0:
+            actions.append("startup import smoke")
+            return None
+
+    return import_smoke.stderr.strip() or import_smoke.stdout.strip() or "startup import smoke falhou"
 
 
 def _post_room_message(content: str) -> None:
@@ -285,6 +333,16 @@ def _deploy_target(status: dict[str, Any]) -> dict[str, Any]:
         and current_started_at < current_commit_at
     )
     deploy_needed = (not current_active) or pulled_runtime_change or stale_runtime
+
+    if deploy_needed and target.name == "backend":
+        backend_preflight_error = _backend_preflight(target, changed_paths, actions)
+        if backend_preflight_error:
+            return {
+                "target": target.name,
+                "status": "preflight_failed",
+                "actions": actions,
+                "critical": [backend_preflight_error],
+            }
 
     if deploy_needed and current_head_runtime_change and target.name in {"frontend", "chat"}:
         build = _build_target(target, changed_paths)
